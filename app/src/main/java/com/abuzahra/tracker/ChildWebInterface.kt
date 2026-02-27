@@ -1,9 +1,17 @@
 package com.abuzahra.tracker
 
+import android.Manifest
+import android.app.admin.DevicePolicyManager
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
 import android.provider.Settings
 import android.webkit.JavascriptInterface
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.CoroutineScope
@@ -19,40 +27,21 @@ class ChildWebInterface(private val mContext: Context) {
     fun linkDevice(code: String) {
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                // 1. التحقق من الكود
                 val doc = db.collection("linking_codes").document(code).get().await()
-                if (!doc.exists()) {
-                    sendResult("window.onLinkError('الكود غير صحيح')")
-                    return@launch
-                }
-
+                if (!doc.exists()) { sendResult("window.onLinkError('الكود غير صحيح')"); return@launch }
+                
                 val parentUid = doc.getString("parent_uid") ?: ""
                 val deviceId = Settings.Secure.getString(mContext.contentResolver, Settings.Secure.ANDROID_ID)
-
-                // 2. تسجيل دخول مجهول للطفل
-                if (auth.currentUser == null) {
-                    auth.signInAnonymously().await()
-                }
-
-                // 3. تسجيل بيانات الجهاز
-                val data = mapOf(
-                    "device_id" to deviceId,
-                    "last_seen" to System.currentTimeMillis(),
-                    "battery_level" to 100
-                )
-                db.collection("parents").document(parentUid)
-                    .collection("children").document(deviceId).set(data).await()
-
-                // 4. حذف الكود
+                
+                if (auth.currentUser == null) auth.signInAnonymously().await()
+                
+                val data = mapOf("device_id" to deviceId, "last_seen" to System.currentTimeMillis(), "battery_level" to 100)
+                db.collection("parents").document(parentUid).collection("children").document(deviceId).set(data).await()
                 db.collection("linking_codes").document(code).delete().await()
-
-                // 5. حفظ البيانات محلياً
+                
                 SharedPrefsManager.saveData(mContext, parentUid, deviceId)
                 sendResult("window.onLinkSuccess()")
-
-            } catch (e: Exception) {
-                sendResult("window.onLinkError('خطأ: ${e.message}')")
-            }
+            } catch (e: Exception) { sendResult("window.onLinkError('خطأ: ${e.message}')") }
         }
     }
 
@@ -62,18 +51,45 @@ class ChildWebInterface(private val mContext: Context) {
             "accessibility" -> mContext.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             "usage" -> mContext.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             "location" -> mContext.startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-            "overlay" -> mContext.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            "overlay" -> mContext.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${mContext.packageName}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            "notification" -> mContext.startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            "admin" -> {
+                // طلب صلاحية Device Admin
+                val devicePolicyManager = mContext.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+                val compName = ComponentName(mContext, MyDeviceAdminReceiver::class.java)
+                 if (!devicePolicyManager.isAdminActive(compName)) {
+                    val intent = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN)
+                    intent.putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, compName)
+                    intent.putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION, "مطلوب لحماية التطبيق")
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    mContext.startActivity(intent)
+                 }
+            }
+            // الأذونات التي تطلب وقت التشغيل (Runtime)
+            "contacts" -> requestRuntimePermission(Manifest.permission.READ_CONTACTS)
+            "sms" -> requestRuntimePermission(Manifest.permission.READ_SMS)
+            "camera" -> requestRuntimePermission(Manifest.permission.CAMERA)
+            "microphone" -> requestRuntimePermission(Manifest.permission.RECORD_AUDIO)
+            "storage" -> {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    requestRuntimePermission(Manifest.permission.READ_MEDIA_IMAGES)
+                } else {
+                    requestRuntimePermission(Manifest.permission.READ_EXTERNAL_STORAGE)
+                }
+            }
+        }
+    }
+    
+    private fun requestRuntimePermission(permission: String) {
+        if (mContext is MainActivity) {
+            if (ContextCompat.checkSelfPermission(mContext, permission) != PackageManager.PERMISSION_GRANTED) {
+                ActivityCompat.requestPermissions(mContext, arrayOf(permission), 102)
+            }
         }
     }
 
     @JavascriptInterface
-    fun startServices() {
-        (mContext as MainActivity).startWorker()
-    }
+    fun startServices() { (mContext as MainActivity).startWorker() }
 
-    private fun sendResult(js: String) {
-        CoroutineScope(Dispatchers.Main).launch {
-            (mContext as MainActivity).webView.evaluateJavascript(js, null)
-        }
-    }
+    private fun sendResult(js: String) { CoroutineScope(Dispatchers.Main).launch { (mContext as MainActivity).webView.evaluateJavascript(js, null) } }
 }
