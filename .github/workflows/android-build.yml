@@ -3,16 +3,13 @@ name: Android CI Build
 on:
   push:
     branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout Code
-      uses: actions/checkout@v4
+    - uses: actions/checkout@v4
     
     - name: Set up JDK 17
       uses: actions/setup-java@v4
@@ -21,8 +18,24 @@ jobs:
         distribution: 'temurin'
         cache: gradle
 
-    # === خطوة مهمة: تثبيت Gradle وتوليد الـ Wrapper ===
-    # هذه الخطوة تحل مشكلة عدم وجود ملف gradlew عند رفع الملفات يدوياً
+    # === خطوة التحقق وإنشاء الملفات الناقصة ===
+    - name: Validate and Create Config Files
+      run: |
+        # التحقق من وجود settings.gradle
+        if [ ! -f settings.gradle ]; then
+           echo "Creating missing settings.gradle"
+           echo "rootProject.name = 'AbuAlZahra-Child'" > settings.gradle
+           echo "include ':app'" >> settings.gradle
+        fi
+        
+        # التحقق من وجود gradle.properties
+        if [ ! -f gradle.properties ]; then
+           echo "Creating missing gradle.properties"
+           echo "org.gradle.jvmargs=-Xmx2048m" > gradle.properties
+           echo "android.useAndroidX=true" >> gradle.properties
+        fi
+
+    # === تثبيت Gradle وتوليد Wrapper ===
     - name: Setup Gradle
       run: |
         curl -L https://services.gradle.org/distributions/gradle-8.5-bin.zip -o gradle-8.5-bin.zip
