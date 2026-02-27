@@ -1,0 +1,34 @@
+{
+  "project_info": {
+    "project_number": "787676787951",
+    "project_id": "studio-7073076148-6afe0",
+    "storage_bucket": "studio-7073076148-6afe0.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:787676787951:android:bc4742c2e9921c5194171a",
+        "android_client_info": {
+          "package_name": "com.abuzahra.tracker"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "787676787951-20uf0a81hb0n5b95t9htb7cd073lu2bm.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyASBVIQ0AvrsLqAgbT9k6L7bCpZKoqdvjo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
