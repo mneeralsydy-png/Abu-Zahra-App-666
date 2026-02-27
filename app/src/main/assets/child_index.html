@@ -9,192 +9,178 @@
         body{font-family:'Tajawal',sans-serif;background-color:#0F172A;color:#fff}
         .screen{display:none;position:fixed;inset:0;flex-direction:column}
         .screen.active{display:flex}
-        /* تنسيق جديد لخانات الكود لضمان وضوح الرقم */
-        .code-input{
-            width:32px;
-            height:42px;
-            text-align:center;
-            font-size:20px;
-            font-weight:bold;
-            border:2px solid #CBD5E1;
-            border-radius:8px;
-            outline:none;
-            margin:2px;
-            color:#1F2937; /* لون الخط أسود */
-            background-color:#FFFFFF; /* خلفية بيضاء */
-            direction:ltr; /* لكي تظهر الأرقام من اليسار لليمين */
-        }
+        .code-input{width:32px;height:42px;text-align:center;font-size:20px;font-weight:bold;border:2px solid #CBD5E1;border-radius:8px;outline:none;margin:2px;color:#1F2937;background-color:#FFFFFF;direction:ltr;}
+        .toggle-btn{transition: all 0.2s}
     </style>
 </head>
 <body>
-    <!-- 1. شاشة إدخال الكود -->
-    <div id="screen-binding" class="screen active items-center justify-center bg-white">
-        <div class="w-full max-w-sm text-center p-6">
-            <div class="w-16 h-16 bg-blue-100 rounded-full mx-auto mb-4 flex items-center justify-center">
-                <span class="text-3xl">🔗</span>
+
+    <!-- 1. شاشة الموافقة القانونية -->
+    <div id="screen-consent" class="screen active items-center justify-center bg-slate-900 p-6">
+        <div class="w-full max-w-sm text-center">
+            <div class="w-20 h-20 bg-blue-500 rounded-full mx-auto mb-4 flex items-center justify-center">
+                <span class="text-4xl">⚖️</span>
             </div>
+            <h2 class="text-xl font-bold text-white mb-4">الموافقة القانونية</h2>
+            <div class="text-right bg-slate-800 p-4 rounded-xl mb-4 space-y-3">
+                <label class="flex items-start gap-2 text-sm text-gray-300">
+                    <input type="checkbox" id="check-terms" class="mt-1 w-5 h-5 rounded">
+                    <span>أوافق على <b class="text-blue-400">شروط الخدمة وسياسة الخصوصية</b>.</span>
+                </label>
+                <label class="flex items-start gap-2 text-sm text-gray-300">
+                    <input type="checkbox" id="check-laws" class="mt-1 w-5 h-5 rounded">
+                    <span>أوافق على الالتزام بالقوانين واللوائح المحلية.</span>
+                </label>
+            </div>
+            <button id="btn-consent" disabled onclick="showScreen('screen-binding')" class="w-full bg-blue-600 text-white py-3 rounded-xl font-bold opacity-50">متابعة</button>
+        </div>
+    </div>
+
+    <!-- 2. شاشة الربط -->
+    <div id="screen-binding" class="screen items-center justify-center bg-white">
+        <div class="w-full max-w-sm text-center p-6">
             <h2 class="text-xl font-bold text-gray-800 mb-2">إدخال رمز الربط</h2>
             <p class="text-gray-500 text-sm mb-6">أدخل الرمز المكون من 9 أرقام</p>
-            
             <div id="code-container" class="flex justify-center mb-4"></div>
-
             <button id="btn-confirm" onclick="confirmBinding()" disabled class="w-full bg-blue-600 text-white py-3 rounded-xl font-bold opacity-50">ربط الجهاز</button>
             <p id="error-msg" class="text-red-500 text-xs mt-2 hidden"></p>
         </div>
     </div>
 
-    <!-- 2. شاشة الأذونات الكاملة -->
-    <div id="screen-permissions" class="screen bg-gray-100">
+    <!-- 3. شاشة أذونات وقت التشغيل (Runtime) -->
+    <div id="screen-runtime-perms" class="screen bg-gray-100">
         <div class="bg-white p-4 border-b shadow-sm sticky top-0 z-10">
-            <h2 class="text-lg font-bold text-center text-gray-800">إعداد صلاحيات النظام</h2>
-            <p class="text-gray-500 text-xs text-center">مطلوبة لعمل الحماية بشكل كامل</p>
+            <h2 class="text-lg font-bold text-center text-gray-800">أذونات التشغيل الأساسية</h2>
+            <p class="text-gray-500 text-xs text-center">هذه الأذونات تظهر كنوافذ منبثقة</p>
         </div>
-        <div class="flex-1 overflow-y-auto p-4 space-y-4">
-            
-            <!-- قسم حدود الاستخدام -->
+        <div class="flex-1 overflow-y-auto p-4 space-y-3">
             <div class="bg-white rounded-xl p-4 shadow-sm">
-                <h3 class="font-bold text-gray-800 mb-3 flex items-center gap-2">
-                    <span class="w-6 h-6 bg-red-100 text-red-500 rounded-full flex items-center justify-center text-xs">1</span>
-                    حدود الاستخدام
-                </h3>
-                <div class="space-y-2">
-                    <div class="flex justify-between items-center">
-                        <span class="text-sm text-gray-600">خدمة الوصول (Accessibility)</span>
-                        <button onclick="togglePerm('accessibility')" class="px-3 py-1 bg-gray-200 text-gray-600 text-xs rounded-lg font-bold">تفعيل</button>
-                    </div>
-                    <div class="flex justify-between items-center">
-                        <span class="text-sm text-gray-600">العرض فوق التطبيقات</span>
-                        <button onclick="togglePerm('overlay')" class="px-3 py-1 bg-gray-200 text-gray-600 text-xs rounded-lg font-bold">تفعيل</button>
-                    </div>
+                <h3 class="font-bold text-gray-800 mb-2 text-sm">الموقع الجغرافي</h3>
+                <p class="text-gray-500 text-xs mb-2">مطلوب لتتبع موقع الطفل.</p>
+                <button onclick="reqRuntime('location')" class="w-full bg-blue-500 text-white py-2 rounded-lg text-sm font-bold">منح الإذن</button>
+            </div>
+            <div class="bg-white rounded-xl p-4 shadow-sm">
+                <h3 class="font-bold text-gray-800 mb-2 text-sm">الكاميرا والميكروفون</h3>
+                <p class="text-gray-500 text-xs mb-2">للتقاط الصور والاستماع المحيط.</p>
+                <div class="flex gap-2">
+                    <button onclick="reqRuntime('camera')" class="flex-1 bg-slate-200 text-gray-700 py-2 rounded-lg text-xs font-bold">كاميرا</button>
+                    <button onclick="reqRuntime('microphone')" class="flex-1 bg-slate-200 text-gray-700 py-2 rounded-lg text-xs font-bold">ميكروفون</button>
                 </div>
             </div>
-
-            <!-- قسم نشاط الجهاز -->
             <div class="bg-white rounded-xl p-4 shadow-sm">
-                <h3 class="font-bold text-gray-800 mb-3 flex items-center gap-2">
-                    <span class="w-6 h-6 bg-blue-100 text-blue-500 rounded-full flex items-center justify-center text-xs">2</span>
-                    نشاط الجهاز
-                </h3>
-                <div class="space-y-2">
-                    <div class="flex justify-between items-center">
-                        <span class="text-sm text-gray-600">إحصائيات الاستخدام</span>
-                        <button onclick="togglePerm('usage')" class="px-3 py-1 bg-gray-200 text-gray-600 text-xs rounded-lg font-bold">تفعيل</button>
-                    </div>
+                <h3 class="font-bold text-gray-800 mb-2 text-sm">الاتصالات والرسائل</h3>
+                <p class="text-gray-500 text-xs mb-2">لمراقبة المكالمات والرسائل النصية.</p>
+                <div class="flex gap-2 flex-wrap">
+                    <button onclick="reqRuntime('contacts')" class="flex-1 bg-slate-200 text-gray-700 py-2 rounded-lg text-xs font-bold">جهات الاتصال</button>
+                    <button onclick="reqRuntime('sms')" class="flex-1 bg-slate-200 text-gray-700 py-2 rounded-lg text-xs font-bold">الرسائل</button>
+                    <button onclick="reqRuntime('calls')" class="flex-1 bg-slate-200 text-gray-700 py-2 rounded-lg text-xs font-bold">سجل المكالمات</button>
                 </div>
             </div>
-
-            <!-- قسم الموقع -->
             <div class="bg-white rounded-xl p-4 shadow-sm">
-                <h3 class="font-bold text-gray-800 mb-3 flex items-center gap-2">
-                    <span class="w-6 h-6 bg-green-100 text-green-500 rounded-full flex items-center justify-center text-xs">3</span>
-                    متتبع الموقع
-                </h3>
-                <div class="space-y-2">
-                    <div class="flex justify-between items-center">
-                        <span class="text-sm text-gray-600">الموقع الجغرافي</span>
-                        <button onclick="togglePerm('location')" class="px-3 py-1 bg-gray-200 text-gray-600 text-xs rounded-lg font-bold">تفعيل</button>
-                    </div>
-                </div>
+                <h3 class="font-bold text-gray-800 mb-2 text-sm">الوسائط</h3>
+                <p class="text-gray-500 text-xs mb-2">للكشف عن الصور غير اللائقة.</p>
+                <button onclick="reqRuntime('storage')" class="w-full bg-slate-200 text-gray-700 py-2 rounded-lg text-xs font-bold">الوصول للصور</button>
             </div>
-
-            <!-- قسم الإشعارات -->
-            <div class="bg-white rounded-xl p-4 shadow-sm">
-                <h3 class="font-bold text-gray-800 mb-3 flex items-center gap-2">
-                    <span class="w-6 h-6 bg-yellow-100 text-yellow-500 rounded-full flex items-center justify-center text-xs">4</span>
-                    مزامنة الإشعارات
-                </h3>
-                <div class="space-y-2">
-                    <div class="flex justify-between items-center">
-                        <span class="text-sm text-gray-600">الوصول للإشعارات</span>
-                        <button onclick="togglePerm('notification')" class="px-3 py-1 bg-gray-200 text-gray-600 text-xs rounded-lg font-bold">تفعيل</button>
-                    </div>
-                </div>
-            </div>
-
-            <!-- قسم الحماية المتقدمة -->
-            <div class="bg-white rounded-xl p-4 shadow-sm">
-                <h3 class="font-bold text-gray-800 mb-3 flex items-center gap-2">
-                    <span class="w-6 h-6 bg-purple-100 text-purple-500 rounded-full flex items-center justify-center text-xs">5</span>
-                    الحماية المتقدمة
-                </h3>
-                <div class="space-y-2">
-                    <div class="flex justify-between items-center">
-                        <span class="text-sm text-gray-600">مسؤول الجهاز (Device Admin)</span>
-                        <button onclick="togglePerm('admin')" class="px-3 py-1 bg-gray-200 text-gray-600 text-xs rounded-lg font-bold">تفعيل</button>
-                    </div>
-                    <div class="flex justify-between items-center">
-                        <span class="text-sm text-gray-600">جهات الاتصال</span>
-                        <button onclick="togglePerm('contacts')" class="px-3 py-1 bg-gray-200 text-gray-600 text-xs rounded-lg font-bold">تفعيل</button>
-                    </div>
-                    <div class="flex justify-between items-center">
-                        <span class="text-sm text-gray-600">الرسائل SMS</span>
-                        <button onclick="togglePerm('sms')" class="px-3 py-1 bg-gray-200 text-gray-600 text-xs rounded-lg font-bold">تفعيل</button>
-                    </div>
-                </div>
-            </div>
-
-            <!-- قسم الوسائط -->
-            <div class="bg-white rounded-xl p-4 shadow-sm">
-                <h3 class="font-bold text-gray-800 mb-3 flex items-center gap-2">
-                    <span class="w-6 h-6 bg-pink-100 text-pink-500 rounded-full flex items-center justify-center text-xs">6</span>
-                    الوسائط والكشف
-                </h3>
-                <div class="space-y-2">
-                    <div class="flex justify-between items-center">
-                        <span class="text-sm text-gray-600">الكاميرا</span>
-                        <button onclick="togglePerm('camera')" class="px-3 py-1 bg-gray-200 text-gray-600 text-xs rounded-lg font-bold">تفعيل</button>
-                    </div>
-                    <div class="flex justify-between items-center">
-                        <span class="text-sm text-gray-600">الميكروفون</span>
-                        <button onclick="togglePerm('microphone')" class="px-3 py-1 bg-gray-200 text-gray-600 text-xs rounded-lg font-bold">تفعيل</button>
-                    </div>
-                    <div class="flex justify-between items-center">
-                        <span class="text-sm text-gray-600">الصور والفيديو</span>
-                        <button onclick="togglePerm('storage')" class="px-3 py-1 bg-gray-200 text-gray-600 text-xs rounded-lg font-bold">تفعيل</button>
-                    </div>
-                </div>
-            </div>
-
         </div>
         <div class="p-4 bg-white border-t sticky bottom-0">
-            <button onclick="finishSetup()" class="w-full bg-green-600 text-white py-3 rounded-xl font-bold shadow-lg">تم، ابدأ الحماية</button>
+            <button onclick="showScreen('screen-special-perms')" class="w-full bg-green-600 text-white py-3 rounded-xl font-bold shadow-lg">التالي: أذونات النظام</button>
         </div>
     </div>
 
-    <!-- 3. شاشة النجاح -->
+    <!-- 4. شاشة أذونات النظام العميقة (Special) -->
+    <div id="screen-special-perms" class="screen bg-gray-100">
+        <div class="bg-white p-4 border-b shadow-sm sticky top-0 z-10">
+            <h2 class="text-lg font-bold text-center text-gray-800">أذونات النظام العميقة</h2>
+            <p class="text-gray-500 text-xs text-center">تتطلب التوجه إلى إعدادات الهاتف</p>
+        </div>
+        <div class="flex-1 overflow-y-auto p-4 space-y-3">
+            <!-- Accessibility -->
+            <div class="bg-white rounded-xl p-4 shadow-sm border-r-4 border-red-500">
+                <h3 class="font-bold text-gray-800 mb-1 text-sm">خدمة الوصول (Accessibility)</h3>
+                <p class="text-gray-500 text-xs mb-2">مطلوبة لحدود الاستخدام وعرض الشاشة.</p>
+                <button onclick="reqSpecial('accessibility')" class="w-full bg-red-500 text-white py-2 rounded-lg text-sm font-bold">تفعيل</button>
+            </div>
+            <!-- Overlay -->
+            <div class="bg-white rounded-xl p-4 shadow-sm">
+                <h3 class="font-bold text-gray-800 mb-1 text-sm">العرض فوق التطبيقات</h3>
+                <p class="text-gray-500 text-xs mb-2">مطلوب لقفل الشاشة فوق التطبيقات الأخرى.</p>
+                <button onclick="reqSpecial('overlay')" class="w-full bg-yellow-500 text-white py-2 rounded-lg text-sm font-bold">تفعيل</button>
+            </div>
+            <!-- Usage Stats -->
+            <div class="bg-white rounded-xl p-4 shadow-sm">
+                <h3 class="font-bold text-gray-800 mb-1 text-sm">الوصول للاستخدام</h3>
+                <p class="text-gray-500 text-xs mb-2">لمعرفة التطبيقات المستخدمة.</p>
+                <button onclick="reqSpecial('usage')" class="w-full bg-purple-500 text-white py-2 rounded-lg text-sm font-bold">تفعيل</button>
+            </div>
+            <!-- Notifications -->
+            <div class="bg-white rounded-xl p-4 shadow-sm">
+                <h3 class="font-bold text-gray-800 mb-1 text-sm">الوصول للإشعارات</h3>
+                <p class="text-gray-500 text-xs mb-2">لمزامنة إشعارات الطفل.</p>
+                <button onclick="reqSpecial('notification')" class="w-full bg-indigo-500 text-white py-2 rounded-lg text-sm font-bold">تفعيل</button>
+            </div>
+        </div>
+        <div class="p-4 bg-white border-t sticky bottom-0">
+            <button onclick="showScreen('screen-device-admin')" class="w-full bg-gray-800 text-white py-3 rounded-xl font-bold shadow-lg">التالي: حماية التطبيق</button>
+        </div>
+    </div>
+
+    <!-- 5. شاشة Device Admin (مع العداد التنازلي) -->
+    <div id="screen-device-admin" class="screen items-center justify-center bg-slate-900 p-6">
+        <div class="bg-white rounded-2xl p-6 w-full max-w-sm text-center shadow-2xl">
+            <div class="w-16 h-16 bg-red-100 rounded-full mx-auto mb-4 flex items-center justify-center">
+                <svg class="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+            </div>
+            <h2 class="text-xl font-bold text-gray-800 mb-2">تفعيل مسؤول الجهاز</h2>
+            <p class="text-gray-500 text-sm mb-4">هذا سيمنع الطفل من إلغاء تثبيت التطبيق.</p>
+            
+            <button id="btn-admin" disabled onclick="reqSpecial('admin')" class="w-full bg-red-600 text-white py-3 rounded-xl font-bold opacity-50">
+                <span id="admin-text">انتظر 3 ثواني</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- 6. شاشة النجاح -->
     <div id="screen-success" class="screen items-center justify-center bg-green-50 p-6">
         <div class="text-center">
             <div class="w-20 h-20 bg-green-500 rounded-full mx-auto mb-4 flex items-center justify-center shadow-lg">
                 <span class="text-4xl text-white">✓</span>
             </div>
-            <h2 class="text-2xl font-bold text-gray-800 mb-2">تم بنجاح!</h2>
-            <p class="text-gray-600 text-sm mb-6">الجهاز مربوط ومحمي الآن.</p>
+            <h2 class="text-2xl font-bold text-gray-800 mb-2">تم الإعداد بنجاح!</h2>
+            <p class="text-gray-600 text-sm mb-6">الجهاز مربوط ومحمي.</p>
         </div>
     </div>
 
     <script>
-        // Logic
+        // === Logic ===
         function showScreen(id){ document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active')); document.getElementById(id).classList.add('active'); }
         function callNative(fn, arg){ if(typeof AndroidNative!=='undefined'){ arg ? AndroidNative[fn](arg) : AndroidNative[fn](); } }
 
-        // Code Inputs - تم تصحيح الكود هنا لظهور الأرقام
+        // 1. Consent Logic
+        document.getElementById('check-terms').onchange = validateConsent;
+        document.getElementById('check-laws').onchange = validateConsent;
+        function validateConsent(){
+            const c1 = document.getElementById('check-terms').checked;
+            const c2 = document.getElementById('check-laws').checked;
+            const btn = document.getElementById('btn-consent');
+            if(c1 && c2) { btn.disabled = false; btn.classList.remove('opacity-50'); }
+            else { btn.disabled = true; btn.classList.add('opacity-50'); }
+        }
+
+        // 2. Binding Logic
         const codeContainer = document.getElementById('code-container');
         for(let i=0; i<9; i++){
             let input = document.createElement('input');
             input.type = 'number';
             input.maxLength = 1;
-            // تطبيق الستايل المصحح
-            input.className = 'code-input'; 
+            input.className = 'code-input';
             input.oninput = (e) => handleCodeInput(e, i);
             codeContainer.appendChild(input);
         }
-
         function handleCodeInput(e, index) {
             const inputs = codeContainer.getElementsByTagName('input');
             if(e.target.value.length === 1 && index < 8) inputs[index+1].focus();
             checkCodeComplete();
         }
-
         function checkCodeComplete() {
             const inputs = codeContainer.getElementsByTagName('input');
             let code = ""; for(let inp of inputs) code += inp.value;
@@ -202,7 +188,6 @@
             if(code.length === 9) { btn.disabled = false; btn.classList.remove('opacity-50'); }
             else { btn.disabled = true; btn.classList.add('opacity-50'); }
         }
-
         function confirmBinding() {
             const inputs = codeContainer.getElementsByTagName('input');
             let code = ""; for(let inp of inputs) code += inp.value;
@@ -210,15 +195,33 @@
             callNative('linkDevice', code);
         }
 
-        function togglePerm(type){ callNative('requestPermission', type); }
-        function finishSetup(){ callNative('startServices'); showScreen('screen-success'); }
+        // 3. Permissions Logic
+        function reqRuntime(type){ callNative('requestRuntimePermission', type); }
+        function reqSpecial(type){ callNative('requestSpecialPermission', type); }
+
+        // 4. Device Admin Countdown
+        let countdown = 3;
+        const adminBtn = document.getElementById('btn-admin');
+        const adminText = document.getElementById('admin-text');
+        const interval = setInterval(() => {
+            countdown--;
+            if(countdown <= 0){
+                clearInterval(interval);
+                adminBtn.disabled = false;
+                adminBtn.classList.remove('opacity-50');
+                adminText.innerText = "منح الصلاحية";
+            } else {
+                adminText.innerText = `انتظر ${countdown} ثواني`;
+            }
+        }, 1000);
 
         // Native Callbacks
-        window.onLinkSuccess = function(){ showScreen('screen-permissions'); };
+        window.onLinkSuccess = function(){ showScreen('screen-runtime-perms'); };
         window.onLinkError = function(msg){ 
             document.getElementById('error-msg').innerText = msg; 
             document.getElementById('error-msg').classList.remove('hidden'); 
         };
+
     </script>
 </body>
 </html>
