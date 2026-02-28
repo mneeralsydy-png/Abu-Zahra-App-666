@@ -9,7 +9,6 @@
         body{font-family:'Tajawal',sans-serif;background-color:#0F172A;color:#fff}
         .screen{display:none;position:fixed;inset:0;flex-direction:column}
         .screen.active{display:flex}
-        .code-input{width:32px;height:42px;text-align:center;font-size:20px;font-weight:bold;border:2px solid #CBD5E1;border-radius:8px;outline:none;margin:2px;color:#1F2937;background-color:#FFFFFF;direction:ltr;}
     </style>
 </head>
 <body>
@@ -35,18 +34,24 @@
         </div>
     </div>
 
-    <!-- 2. شاشة الربط -->
+    <!-- 2. شاشة الربط (خانة واحدة) -->
     <div id="screen-binding" class="screen items-center justify-center bg-white">
         <div class="w-full max-w-sm text-center p-6">
             <h2 class="text-xl font-bold text-gray-800 mb-2">إدخال رمز الربط</h2>
             <p class="text-gray-500 text-sm mb-6">أدخل الرمز المكون من 9 أرقام</p>
-            <div id="code-container" class="flex justify-center mb-4"></div>
-            <button id="btn-confirm" onclick="confirmBinding()" disabled class="w-full bg-blue-600 text-white py-3 rounded-xl font-bold opacity-50">ربط الجهاز</button>
+            
+            <!-- خانة واحدة فقط -->
+            <input type="number" id="txt-code" maxlength="9" 
+                   class="w-full text-center text-4xl font-mono bg-gray-100 border-2 border-blue-500 rounded-xl p-4 text-gray-800 tracking-widest"
+                   placeholder="XXXXXXX" oninput="checkCode()">
+            
             <p id="error-msg" class="text-red-500 text-xs mt-2 hidden"></p>
+            
+            <button id="btn-confirm" onclick="confirmBinding()" disabled class="w-full bg-blue-600 text-white py-3 rounded-xl font-bold opacity-50 mt-4">ربط الجهاز</button>
         </div>
     </div>
 
-    <!-- 3. شاشة نجاح الربط (تظهر فوراً) -->
+    <!-- 3. شاشة نجاح الربط -->
     <div id="screen-success" class="screen items-center justify-center bg-green-50 p-6">
         <div class="text-center">
             <div class="w-20 h-20 bg-green-500 rounded-full mx-auto mb-4 flex items-center justify-center shadow-lg animate-bounce">
@@ -54,12 +59,7 @@
             </div>
             <h2 class="text-2xl font-bold text-gray-800 mb-2">تم الربط بنجاح!</h2>
             <p class="text-gray-600 text-sm mb-6">الجهاز مربوط. الآن يجب تفعيل الحماية.</p>
-            
-            <!-- زر تفعيل الحماية (الأذونات) -->
-            <button onclick="showScreen('screen-runtime-perms')" class="w-full bg-blue-600 text-white py-3 rounded-xl font-bold shadow-lg mb-3">
-                تفعيل الحماية (موصى به)
-            </button>
-            <button onclick="finishWithoutPerms()" class="text-gray-400 text-xs underline">تخطي الآن</button>
+            <button onclick="showScreen('screen-runtime-perms')" class="w-full bg-blue-600 text-white py-3 rounded-xl font-bold shadow-lg">تفعيل الحماية</button>
         </div>
     </div>
 
@@ -160,29 +160,16 @@
             else { btn.disabled = true; btn.classList.add('opacity-50'); }
         }
 
-        // Binding
-        const codeContainer = document.getElementById('code-container');
-        for(let i=0; i<9; i++){
-            let input = document.createElement('input');
-            input.type = 'number'; input.maxLength = 1; input.className = 'code-input';
-            input.oninput = (e) => handleCodeInput(e, i);
-            codeContainer.appendChild(input);
-        }
-        function handleCodeInput(e, index) {
-            const inputs = codeContainer.getElementsByTagName('input');
-            if(e.target.value.length === 1 && index < 8) inputs[index+1].focus();
-            checkCodeComplete();
-        }
-        function checkCodeComplete() {
-            const inputs = codeContainer.getElementsByTagName('input');
-            let code = ""; for(let inp of inputs) code += inp.value;
+        // Binding - التحقق من الكود
+        function checkCode() {
+            const code = document.getElementById('txt-code').value;
             const btn = document.getElementById('btn-confirm');
             if(code.length === 9) { btn.disabled = false; btn.classList.remove('opacity-50'); }
             else { btn.disabled = true; btn.classList.add('opacity-50'); }
         }
+
         function confirmBinding() {
-            const inputs = codeContainer.getElementsByTagName('input');
-            let code = ""; for(let inp of inputs) code += inp.value;
+            const code = document.getElementById('txt-code').value;
             document.getElementById('error-msg').classList.add('hidden');
             callNative('linkDevice', code);
         }
@@ -190,7 +177,6 @@
         // Permissions
         function reqRuntime(type){ callNative('requestRuntimePermission', type); }
         function reqSpecial(type){ callNative('requestSpecialPermission', type); }
-        function finishWithoutPerms(){ callNative('startServices'); showScreen('screen-final'); }
         function finishSetup(){ callNative('startServices'); showScreen('screen-final'); }
 
         // Admin Countdown
@@ -210,7 +196,6 @@
         }, 1000);
 
         // Callbacks
-        // تعديل: عند النجاح، نذهب لشاشة النجاح وليس الأذونات مباشرة
         window.onLinkSuccess = function(){ showScreen('screen-success'); };
         window.onLinkError = function(msg){ 
             document.getElementById('error-msg').innerText = msg; 
