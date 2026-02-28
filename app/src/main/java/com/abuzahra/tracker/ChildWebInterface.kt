@@ -39,36 +39,32 @@ class ChildWebInterface(private val mContext: Context) {
                 val parentUid = doc.getString("parent_uid") ?: ""
                 val deviceId = Settings.Secure.getString(mContext.contentResolver, Settings.Secure.ANDROID_ID)
 
-                // 2. محاولة التسجيل (هنا يحدث الخطأ عادةً إذا لم يضف المستخدم SHA-1 في Firebase)
-                if (auth.currentUser == null) {
-                    try {
+                // 2. تسجيل الدخول المجهول
+                try {
+                    if (auth.currentUser == null) {
                         auth.signInAnonymously().await()
-                    } catch (e: Exception) {
-                        // إذا فشل التسجيل، نستمر ولكن نسجل التحذير
-                        Log.e("ChildApp", "Firebase Auth Failed (SHA-1 missing in console?): ${e.message}")
-                        // لا نوقف العملية، نحاول الكتابة كـ UID مجهول (إذا كانت القواعد تسمح)
                     }
+                } catch (e: Exception) {
+                    // هذا الخطأ يعني أن SHA-1 خاطئ أو Anonymous Auth معطل
+                    Log.e("ChildApp", "Auth Failed", e)
+                    sendResult("window.onLinkError('فشل المصادقة: تأكد من تفعيل Anonymous Auth في Firebase ومطابقة SHA-1')")
+                    return@launch
                 }
-                
+
                 // 3. تسجيل بيانات الجهاز
                 val data = mapOf("device_id" to deviceId, "last_seen" to System.currentTimeMillis(), "battery_level" to 100)
                 db.collection("parents").document(parentUid)
                     .collection("children").document(deviceId).set(data).await()
                 
-                // 4. حذف الكود وتحديث الواجهة
+                // 4. حذف الكود
                 db.collection("linking_codes").document(code).delete().await()
+                
                 SharedPrefsManager.saveData(mContext, parentUid, deviceId)
                 sendResult("window.onLinkSuccess()")
 
             } catch (e: Exception) {
                 Log.e("ChildApp", "Link Error", e)
-                // رسالة خطأ أوضح للمستخدم
-                val errorMsg = if (e.message?.contains("PERMISSION_DENIED") == true) {
-                    "خطأ: تأكد من إضافة مفتاح SHA-1 في إعدادات Firebase"
-                } else {
-                    "خطأ في الاتصال: ${e.message}"
-                }
-                sendResult("window.onLinkError('$errorMsg')")
+                sendResult("window.onLinkError('خطأ: ${e.message}')")
             }
         }
     }
