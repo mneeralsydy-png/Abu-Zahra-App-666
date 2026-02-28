@@ -18,24 +18,22 @@ jobs:
         distribution: 'temurin'
         cache: gradle
 
-    # === خطوة التحقق وإنشاء الملفات الناقصة ===
+    # === خطوة التحقق وإنشاء الملفات الناقصة لضمان استقرار البناء ===
     - name: Validate and Create Config Files
       run: |
-        # التحقق من وجود settings.gradle
         if [ ! -f settings.gradle ]; then
            echo "Creating missing settings.gradle"
            echo "rootProject.name = 'AbuAlZahra-Child'" > settings.gradle
            echo "include ':app'" >> settings.gradle
         fi
         
-        # التحقق من وجود gradle.properties
         if [ ! -f gradle.properties ]; then
            echo "Creating missing gradle.properties"
            echo "org.gradle.jvmargs=-Xmx2048m" > gradle.properties
            echo "android.useAndroidX=true" >> gradle.properties
         fi
 
-    # === تثبيت Gradle وتوليد Wrapper ===
+    # === تثبيت Gradle وتوليد الـ Wrapper ===
     - name: Setup Gradle
       run: |
         curl -L https://services.gradle.org/distributions/gradle-8.5-bin.zip -o gradle-8.5-bin.zip
@@ -46,23 +44,34 @@ jobs:
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
       
-    # === البناء واستخراج المفتاح ===
+    # === بناء التطبيق واستخراج مفتاح SHA-1 بدقة ===
     - name: Build with Gradle and Extract SHA-1
       run: |
-        # 1. بناء التطبيق
+        # 1. بناء التطبيق أولاً لإجبار النظام على توليد ملف debug.keystore
         ./gradlew :app:assembleDebug
         
-        # 2. طباعة مفتاح SHA-1
         echo "============================================================"
         echo "🔥 FIREBASE SHA-1 KEY (COPY THIS) 🔥"
         echo "============================================================"
-        keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android -keypass android 2>/dev/null | grep "SHA1" | head -n 1
+        
+        # تحديد المسار الافتراضي للمفتاح في بيئة Ubuntu
+        DEBUG_KEYSTORE_PATH="$HOME/.android/debug.keystore"
+        
+        # التأكد من وجود الملف ثم استخراج الكود
+        if [ -f "$DEBUG_KEYSTORE_PATH" ]; then
+           keytool -list -v -keystore "$DEBUG_KEYSTORE_PATH" -alias androiddebugkey -storepass android -keypass android | grep "SHA1" || echo "⚠️ SHA-1 not found in keystore"
+        else
+           echo "❌ Debug keystore not found at $DEBUG_KEYSTORE_PATH"
+           echo "Trying to find it manually..."
+           find $HOME -name "debug.keystore"
+        fi
+        
         echo "============================================================"
         echo "Add the above key to: Firebase Console -> Project Settings -> Your Apps -> SHA certificate fingerprints"
         echo "============================================================"
       
     - name: Upload APK Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: AbuAlZahra-Child-App
-        path: app/build/outputs/apk/debug/app-debug.apk
+        uses: actions/upload-artifact@v4
+        with:
+          name: AbuAlZahra-Child-App
+          path: app/build/outputs/apk/debug/app-debug.apk
