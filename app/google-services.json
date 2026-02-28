@@ -1,18 +1,35 @@
 {
   "project_info": {
     "project_number": "787676787951",
+    "firebase_url": "https://studio-7073076148-6afe0-default-rtdb.firebaseio.com",
     "project_id": "studio-7073076148-6afe0",
     "storage_bucket": "studio-7073076148-6afe0.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:787676787951:android:bc4742c2e9921c5194171a",
+        "mobilesdk_app_id": "1:787676787951:android:78bb939f7ab24b0494171a",
         "android_client_info": {
-          "package_name": "com.abuzahra.tracker"
+          "package_name": "com.abuzahra.manager"
         }
       },
       "oauth_client": [
+        {
+          "client_id": "787676787951-2lvg60hmtjkdb9mbie389ir8j5ad3p71.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.abuzahra.manager",
+            "certificate_hash": "c9da63407701bfb63bda69f836dd39aed213c1fa"
+          }
+        },
+        {
+          "client_id": "787676787951-3mq2reqe0abm0f3qbqu6ebaa7fuvpp4d.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.abuzahra.manager",
+            "certificate_hash": "4f20d9ae4ee6312e54726006b135e94fd7ed8153"
+          }
+        },
         {
           "client_id": "787676787951-20uf0a81hb0n5b95t9htb7cd073lu2bm.apps.googleusercontent.com",
           "client_type": 3
@@ -25,7 +42,49 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "787676787951-20uf0a81hb0n5b95t9htb7cd073lu2bm.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:787676787951:android:bc4742c2e9921c5194171a",
+        "android_client_info": {
+          "package_name": "com.abuzahra.tracker"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "787676787951-qkm5vs3v6lkpujfe9mhegm3tfo6a9s6v.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.abuzahra.tracker",
+            "certificate_hash": "1fb1c14cdf6215cf419582644393c331f7290d43"
+          }
+        },
+        {
+          "client_id": "787676787951-20uf0a81hb0n5b95t9htb7cd073lu2bm.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyASBVIQ0AvrsLqAgbT9k6L7bCpZKoqdvjo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "787676787951-20uf0a81hb0n5b95t9htb7cd073lu2bm.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }
