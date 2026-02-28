@@ -18,15 +18,16 @@ jobs:
         distribution: 'temurin'
         cache: gradle
 
-    - name: Validate and Create Config Files
+    # التأكد من ملفات الإعداد
+    - name: Validate Configs
       run: |
         if [ ! -f settings.gradle ]; then
-           echo "rootProject.name = 'AbuAlZahra-Child'" > settings.gradle
-           echo "include ':app'" >> settings.gradle
+          echo "rootProject.name = 'AbuAlZahra-Child'" > settings.gradle
+          echo "include ':app'" >> settings.gradle
         fi
         if [ ! -f gradle.properties ]; then
-           echo "org.gradle.jvmargs=-Xmx2048m" > gradle.properties
-           echo "android.useAndroidX=true" >> gradle.properties
+          echo "org.gradle.jvmargs=-Xmx2048m" > gradle.properties
+          echo "android.useAndroidX=true" >> gradle.properties
         fi
 
     - name: Setup Gradle
@@ -39,26 +40,26 @@ jobs:
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
       
-    - name: Build with Gradle and Extract SHA-1
+    - name: Build Debug APK
+      run: ./gradlew :app:assembleDebug
+      
+    # === طريقة مضمونة لاستخراج SHA-1 من الـ APK مباشرة ===
+    - name: Extract SHA-1 Key
       run: |
-        ./gradlew :app:assembleDebug
-        
         echo "============================================================"
-        echo "🔥 FIREBASE SHA-1 KEY (COPY THIS) 🔥"
+        echo "               🔥 FIREBASE SHA-1 KEY 🔥"
         echo "============================================================"
-        
-        DEBUG_KEYSTORE_PATH="$HOME/.android/debug.keystore"
-        
-        if [ -f "$DEBUG_KEYSTORE_PATH" ]; then
-           keytool -list -v -keystore "$DEBUG_KEYSTORE_PATH" -alias androiddebugkey -storepass android -keypass android | grep "SHA1" || echo "SHA-1 not found"
-        else
-           echo "Keystore not found, trying to generate it..."
-           keytool -genkey -v -keystore "$DEBUG_KEYSTORE_PATH" -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
-           keytool -list -v -keystore "$DEBUG_KEYSTORE_PATH" -alias androiddebugkey -storepass android -keypass android | grep "SHA1"
-        fi
-        
+        echo "COPY THE CODE BELOW (The text after 'SHA1:')"
+        echo "------------------------------------------------------------"
+        # قراءة التوقيع من داخل ملف الـ APK
+        keytool -printcert -jarfile app/build/outputs/apk/debug/app-debug.apk | grep "SHA1"
+        echo "------------------------------------------------------------"
+        echo "INSTRUCTIONS:"
+        echo "1. Copy the line above (e.g., SHA1: XX:XX:XX...)."
+        echo "2. Go to Firebase Console -> Project Settings -> Your Apps."
+        echo "3. Click 'Add Fingerprint' and paste it."
         echo "============================================================"
-
+      
     - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
       with:
