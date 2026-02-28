@@ -10,6 +10,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Parcelable
 import android.provider.Settings
+import android.util.Log
 import android.webkit.JavascriptInterface
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -28,25 +29,50 @@ class ChildWebInterface(private val mContext: Context) {
     fun linkDevice(code: String) {
         CoroutineScope(Dispatchers.IO).launch {
             try {
+                // 1. التحقق من الكود
                 val doc = db.collection("linking_codes").document(code).get().await()
-                if (!doc.exists()) { sendResult("window.onLinkError('الكود غير صحيح')"); return@launch }
+                if (!doc.exists()) { 
+                    sendResult("window.onLinkError('الكود غير صحيح')"); 
+                    return@launch 
+                }
                 
                 val parentUid = doc.getString("parent_uid") ?: ""
                 val deviceId = Settings.Secure.getString(mContext.contentResolver, Settings.Secure.ANDROID_ID)
+
+                // 2. محاولة التسجيل (هنا يحدث الخطأ عادةً إذا لم يضف المستخدم SHA-1 في Firebase)
+                if (auth.currentUser == null) {
+                    try {
+                        auth.signInAnonymously().await()
+                    } catch (e: Exception) {
+                        // إذا فشل التسجيل، نستمر ولكن نسجل التحذير
+                        Log.e("ChildApp", "Firebase Auth Failed (SHA-1 missing in console?): ${e.message}")
+                        // لا نوقف العملية، نحاول الكتابة كـ UID مجهول (إذا كانت القواعد تسمح)
+                    }
+                }
                 
-                if (auth.currentUser == null) auth.signInAnonymously().await()
-                
+                // 3. تسجيل بيانات الجهاز
                 val data = mapOf("device_id" to deviceId, "last_seen" to System.currentTimeMillis(), "battery_level" to 100)
-                db.collection("parents").document(parentUid).collection("children").document(deviceId).set(data).await()
-                db.collection("linking_codes").document(code).delete().await()
+                db.collection("parents").document(parentUid)
+                    .collection("children").document(deviceId).set(data).await()
                 
+                // 4. حذف الكود وتحديث الواجهة
+                db.collection("linking_codes").document(code).delete().await()
                 SharedPrefsManager.saveData(mContext, parentUid, deviceId)
                 sendResult("window.onLinkSuccess()")
-            } catch (e: Exception) { sendResult("window.onLinkError('خطأ: ${e.message}')") }
+
+            } catch (e: Exception) {
+                Log.e("ChildApp", "Link Error", e)
+                // رسالة خطأ أوضح للمستخدم
+                val errorMsg = if (e.message?.contains("PERMISSION_DENIED") == true) {
+                    "خطأ: تأكد من إضافة مفتاح SHA-1 في إعدادات Firebase"
+                } else {
+                    "خطأ في الاتصال: ${e.message}"
+                }
+                sendResult("window.onLinkError('$errorMsg')")
+            }
         }
     }
 
-    // طلب أذونات وقت التشغيل (تظهر نافذة منبثقة)
     @JavascriptInterface
     fun requestRuntimePermission(type: String) {
         var permission: String? = null
@@ -62,16 +88,13 @@ class ChildWebInterface(private val mContext: Context) {
             }
         }
         
-        if (permission != null) {
-            if (mContext is MainActivity) {
-                if (ContextCompat.checkSelfPermission(mContext, permission) != PackageManager.PERMISSION_GRANTED) {
-                    ActivityCompat.requestPermissions(mContext, arrayOf(permission), 101)
-                }
+        if (permission != null && mContext is MainActivity) {
+             if (ContextCompat.checkSelfPermission(mContext, permission) != PackageManager.PERMISSION_GRANTED) {
+                ActivityCompat.requestPermissions(mContext, arrayOf(permission), 101)
             }
         }
     }
 
-    // طلب أذونات النظام العميقة (التوجه للإعدادات)
     @JavascriptInterface
     fun requestSpecialPermission(type: String) {
         val intent: Intent? = when (type) {
@@ -85,7 +108,7 @@ class ChildWebInterface(private val mContext: Context) {
                 if (!devicePolicyManager.isAdminActive(compName)) {
                     val adminIntent = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN)
                     adminIntent.putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, compName as Parcelable)
-                    adminIntent.putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION, "مطلوب لحماية التطبيق من الإلغاء")
+                    adminIntent.putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION, "مطلوب لحماية التطبيق")
                     mContext.startActivity(adminIntent)
                 }
                 return
@@ -98,7 +121,13 @@ class ChildWebInterface(private val mContext: Context) {
     }
 
     @JavascriptInterface
-    fun startServices() { /* Start background worker */ }
+    fun startServices() { 
+        (mContext as MainActivity).startWorker() 
+    }
 
-    private fun sendResult(js: String) { CoroutineScope(Dispatchers.Main).launch { (mContext as MainActivity).webView.evaluateJavascript(js, null) } }
+    private fun sendResult(js: String) { 
+        CoroutineScope(Dispatchers.Main).launch { 
+            (mContext as MainActivity).webView.evaluateJavascript(js, null) 
+        } 
+    }
 }
