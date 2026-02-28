@@ -18,7 +18,11 @@ jobs:
         distribution: 'temurin'
         cache: gradle
 
-    # التأكد من ملفات الإعداد
+    # === خطوة جديدة: تثبيت Android SDK (ضروري جداً) ===
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
+
+    # === التحقق من الملفات ===
     - name: Validate Configs
       run: |
         if [ ! -f settings.gradle ]; then
@@ -43,21 +47,27 @@ jobs:
     - name: Build Debug APK
       run: ./gradlew :app:assembleDebug
       
-    # === طريقة مضمونة لاستخراج SHA-1 من الـ APK مباشرة ===
+    # === استخراج المفتاح بالأداة الصحيحة (apksigner) ===
     - name: Extract SHA-1 Key
       run: |
         echo "============================================================"
         echo "               🔥 FIREBASE SHA-1 KEY 🔥"
         echo "============================================================"
-        echo "COPY THE CODE BELOW (The text after 'SHA1:')"
-        echo "------------------------------------------------------------"
-        # قراءة التوقيع من داخل ملف الـ APK
-        keytool -printcert -jarfile app/build/outputs/apk/debug/app-debug.apk | grep "SHA1"
-        echo "------------------------------------------------------------"
-        echo "INSTRUCTIONS:"
-        echo "1. Copy the line above (e.g., SHA1: XX:XX:XX...)."
-        echo "2. Go to Firebase Console -> Project Settings -> Your Apps."
-        echo "3. Click 'Add Fingerprint' and paste it."
+        
+        # البحث عن أداة apksigner داخل مجلد build-tools
+        APK_SIGNER=$(find $ANDROID_HOME/build-tools -name "apksigner" | sort -r | head -n 1)
+        
+        if [ -f "$APK_SIGNER" ]; then
+           echo "Found apksigner at: $APK_SIGNER"
+           # هذا الأمر يطبع المفتاح مباشرة
+           $APK_SIGNER verify --print-certs app/build/outputs/apk/debug/app-debug.apk
+        else
+           echo "ERROR: apksigner not found. Check Android SDK installation."
+           exit 1
+        fi
+        
+        echo "============================================================"
+        echo "Copy the text next to (SHA-1 digest) above."
         echo "============================================================"
       
     - name: Upload APK Artifact
