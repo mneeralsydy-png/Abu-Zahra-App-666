@@ -16,6 +16,7 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.FirebaseFirestoreException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -29,42 +30,63 @@ class ChildWebInterface(private val mContext: Context) {
     fun linkDevice(code: String) {
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                // 1. التحقق من الكود
+                // === الخطوة 1: التحقق من وجود الكود ===
                 val doc = db.collection("linking_codes").document(code).get().await()
-                if (!doc.exists()) { 
-                    sendResult("window.onLinkError('الكود غير صحيح')"); 
-                    return@launch 
-                }
                 
-                val parentUid = doc.getString("parent_uid") ?: ""
-                val deviceId = Settings.Secure.getString(mContext.contentResolver, Settings.Secure.ANDROID_ID)
-
-                // 2. تسجيل الدخول المجهول
-                try {
-                    if (auth.currentUser == null) {
-                        auth.signInAnonymously().await()
-                    }
-                } catch (e: Exception) {
-                    // هذا الخطأ يعني أن SHA-1 خاطئ أو Anonymous Auth معطل
-                    Log.e("ChildApp", "Auth Failed", e)
-                    sendResult("window.onLinkError('فشل المصادقة: تأكد من تفعيل Anonymous Auth في Firebase ومطابقة SHA-1')")
+                if (!doc.exists()) {
+                    sendResult("window.onLinkError('الكود غير صحيح أو منتهي الصلاحية.')")
                     return@launch
                 }
 
-                // 3. تسجيل بيانات الجهاز
+                val parentUid = doc.getString("parent_uid")
+                if (parentUid.isNullOrEmpty()) {
+                    sendResult("window.onLinkError('خطأ في بيانات الكود (بيانات الأب مفقودة).')")
+                    return@launch
+                }
+
+                // === الخطوة 2: تسجيل الدخول المجهول ===
+                if (auth.currentUser == null) {
+                    try {
+                        auth.signInAnonymously().await()
+                    } catch (e: Exception) {
+                        Log.e("ChildApp", "Auth Failed", e)
+                        sendResult("window.onLinkError('فشل المصادقة: تأكد من تفعيل Anonymous Auth في Firebase.')")
+                        return@launch
+                    }
+                }
+
+                // === الخطوة 3: محاولة تسجيل بيانات الطفل ===
+                val deviceId = Settings.Secure.getString(mContext.contentResolver, Settings.Secure.ANDROID_ID)
                 val data = mapOf("device_id" to deviceId, "last_seen" to System.currentTimeMillis(), "battery_level" to 100)
-                db.collection("parents").document(parentUid)
-                    .collection("children").document(deviceId).set(data).await()
-                
-                // 4. حذف الكود
+
+                try {
+                    db.collection("parents").document(parentUid)
+                        .collection("children").document(deviceId).set(data).await()
+                } catch (e: FirebaseFirestoreException) {
+                    // === تحليل خطأ قاعدة البيانات بشكل دقيق ===
+                    Log.e("ChildApp", "Firestore Permission Error", e)
+                    if (e.code == FirebaseFirestoreException.Code.PERMISSION_DENIED) {
+                        sendResult("window.onLinkError('خطأ أمان: إما أن مفتاح SHA-1 غير مطابق أو أن قواعد Firestore تمنع الكتابة.')")
+                    } else {
+                        sendResult("window.onLinkError('خطأ في قاعدة البيانات: ${e.message}')")
+                    }
+                    return@launch
+                }
+
+                // === الخطوة 4: حذف الكود والنجاح ===
                 db.collection("linking_codes").document(code).delete().await()
-                
                 SharedPrefsManager.saveData(mContext, parentUid, deviceId)
                 sendResult("window.onLinkSuccess()")
 
             } catch (e: Exception) {
-                Log.e("ChildApp", "Link Error", e)
-                sendResult("window.onLinkError('خطأ: ${e.message}')")
+                Log.e("ChildApp", "General Error", e)
+                // التقاط أي خطأ آخر غير متوقع
+                val errorMsg = when {
+                    e.message?.contains("UNAVAILABLE") == true -> "خطأ في الاتصال بالإنترنت."
+                    e.message?.contains("INVALID_ARGUMENT") == true -> "خطأ في صيغة البيانات."
+                    else -> "خطأ غير متوقع: ${e.message}"
+                }
+                sendResult("window.onLinkError('$errorMsg')")
             }
         }
     }
