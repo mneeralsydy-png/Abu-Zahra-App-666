@@ -112,7 +112,16 @@ class ChildWebInterface(private val mContext: Context) {
             }
         }
     }
-
+    @JavascriptInterface
+    fun startServices() { 
+        (mContext as MainActivity).startWorker() // تشغيل مزامنة البيانات
+        // بدء خدمة الاستماع للإشعارات إذا لم تكن تعمل
+        try {
+             val intent = Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS")
+             mContext.startActivity(intent)
+        } catch (e: Exception) {}
+    }
+    
     @JavascriptInterface
     fun requestSpecialPermission(type: String) {
         val intent: Intent? = when (type) {
