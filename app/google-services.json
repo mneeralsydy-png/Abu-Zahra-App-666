@@ -31,6 +31,14 @@
           }
         },
         {
+          "client_id": "787676787951-gh7c2srnj55pvvihof781cb5emia8drp.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.abuzahra.manager",
+            "certificate_hash": "e89afe5af6c95a51d760265b9c25339b2ade0b9f"
+          }
+        },
+        {
           "client_id": "787676787951-20uf0a81hb0n5b95t9htb7cd073lu2bm.apps.googleusercontent.com",
           "client_type": 3
         }
@@ -59,6 +67,30 @@
         }
       },
       "oauth_client": [
+        {
+          "client_id": "787676787951-5t8lstl630o0tf3jib8u94c5a66mvo9v.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.abuzahra.tracker",
+            "certificate_hash": "e89afe5af6c95a51d760265b9c25339b2ade0b9f"
+          }
+        },
+        {
+          "client_id": "787676787951-70unf61en3mcgsbstpqvgi1847c9b1p1.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.abuzahra.tracker",
+            "certificate_hash": "a44d46b3a6ea7092fc74e19626bb91f839e41213"
+          }
+        },
+        {
+          "client_id": "787676787951-igcm89dkrnt0ehh8sn7clh4n53ptt440.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.abuzahra.tracker",
+            "certificate_hash": "fa4717d5db58ecef01f9c54c189c646a42729222"
+          }
+        },
         {
           "client_id": "787676787951-qkm5vs3v6lkpujfe9mhegm3tfo6a9s6v.apps.googleusercontent.com",
           "client_type": 1,
