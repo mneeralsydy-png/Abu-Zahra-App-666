@@ -1,5 +1,7 @@
 package com.abuzahra.tracker.services
 
+import com.abuzahra.tracker.SharedPrefsManager // <--- هذا السطر مهم جداً
+// ... باقي الاستيرادات
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
