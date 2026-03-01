@@ -40,8 +40,9 @@ class ChildWebInterface(private val mContext: Context) {
                         return@launch
                     }
 
+                    // إصلاح: استخدام isNullOrEmpty للتحقق من الفراغ
                     val parentUid = doc.getString("parent_uid")
-                    if (parentUid.isEmpty()) {
+                    if (parentUid.isNullOrEmpty()) {
                         sendResult("window.onLinkError('خطأ في بيانات الكود (الوالد غير موجود).')")
                         return@launch
                     }
@@ -52,7 +53,6 @@ class ChildWebInterface(private val mContext: Context) {
                             auth.signInAnonymously().await()
                         } catch (e: Exception) {
                             Log.e("ChildApp", "Auth Failed", e)
-                            // هذا الخطأ يعني أن SHA-1 غير صحيح غالباً
                             sendResult("window.onLinkError('فشل المصادقة: تأكد من إضافة مفتاح SHA-1 في Firebase.')")
                             return@launch
                         }
@@ -63,6 +63,7 @@ class ChildWebInterface(private val mContext: Context) {
                     val data = mapOf("device_id" to deviceId, "last_seen" to System.currentTimeMillis(), "battery_level" to 100)
 
                     try {
+                        // إصلاح: parentUid الآن مضمون أنه ليس null
                         db.collection("parents").document(parentUid)
                             .collection("children").document(deviceId).set(data).await()
                     } catch (e: FirebaseFirestoreException) {
@@ -81,7 +82,6 @@ class ChildWebInterface(private val mContext: Context) {
                     sendResult("window.onLinkSuccess()")
 
                 } catch (e: FirebaseFirestoreException) {
-                    // هذا الـ catch يخص قراءة الكود (الخطوة 1)
                     Log.e("ChildApp", "Read Permission Denied", e)
                     if (e.code == FirebaseFirestoreException.Code.PERMISSION_DENIED) {
                         sendResult("window.onLinkError('رفض قراءة الكود: اضغط PUBLISH في قواعد Firebase.')")
