@@ -1,5 +1,8 @@
 package com.abuzahra.tracker.services
 
+import com.abuzahra.tracker.SharedPrefsManager // <--- هذا السطر مهم جداً
+// ... باقي الاستيرادات
+
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
