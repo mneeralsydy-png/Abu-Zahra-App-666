@@ -31,18 +31,17 @@ class ChildWebInterface(private val mContext: Context) {
     fun linkDevice(code: String) {
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                // === الخطوة 1: التحقق من وجود الكود في Firebase ===
+                // === الخطوة 1: التحقق من الكود ===
                 val doc = db.collection("linking_codes").document(code).get().await()
                 
                 if (!doc.exists()) {
-                    // الحالة: الكود غير موجود أصلاً
-                    sendResult("window.onLinkError('الكود غير صحيح. يرجى التأكد من الرقم.')")
+                    sendResult("window.onLinkError('الكود غير صحيح أو منتهي الصلاحية.')")
                     return@launch
                 }
 
-                val parentUid = doc.getString("parent_uid")
-                if (parentUid.isNullOrEmpty()) {
-                    sendResult("window.onLinkError('خطأ في بيانات الكود (UID فارغ).')")
+                val parentUid = doc.getString("parent_uid") ?: ""
+                if (parentUid.isEmpty()) {
+                    sendResult("window.onLinkError('خطأ في البيانات: لم يتم العثور على حساب الوالد.')")
                     return@launch
                 }
 
@@ -51,39 +50,44 @@ class ChildWebInterface(private val mContext: Context) {
                     try {
                         auth.signInAnonymously().await()
                     } catch (e: Exception) {
-                        // الحالة: فشل تسجيل الدخول (مشكلة في Sha-1 أو الانترنت)
                         Log.e("ChildApp", "Auth Failed", e)
-                        sendResult("window.onLinkError('فشل الاتصال بالسيرفر. تأكد من مفتاح SHA-1 والانترنت.')")
+                        if (e.message?.contains("ApiException") == true) {
+                             sendResult("window.onLinkError('خطأ شهادة (SHA-1): المفتاح غير مطابق في Firebase.')")
+                        } else {
+                             sendResult("window.onLinkError('فشل الاتصال بالإنترنت أو السيرفر.')")
+                        }
                         return@launch
                     }
                 }
 
+                // === الخطوة 3: حفظ البيانات ===
                 val deviceId = Settings.Secure.getString(mContext.contentResolver, Settings.Secure.ANDROID_ID)
-
-                // === الخطوة 3: محاولة كتابة البيانات (أكثر الأماكن عرضة للخطأ) ===
                 val data = mapOf("device_id" to deviceId, "last_seen" to System.currentTimeMillis(), "battery_level" to 100)
-                
+
                 try {
                     db.collection("parents").document(parentUid)
                         .collection("children").document(deviceId).set(data).await()
                 } catch (e: FirebaseFirestoreException) {
-                    // هنا يتم تحديد نوع الخطأ بالضبط
-                    Log.e("ChildApp", "Firestore Permission Error", e)
-                    when (e.code) {
-                        FirebaseFirestoreException.Code.PERMISSION_DENIED -> {
-                            sendResult("window.onLinkError('خطأ رفض الوصول: قواعد الأمان في Firebase مغلقة.')")
-                        }
-                        FirebaseFirestoreException.Code.UNAVAILABLE -> {
-                            sendResult("window.onLinkError('لا يوجد اتصال بالإنترنت.')")
-                        }
-                        else -> {
-                            sendResult("window.onLinkError('خطأ في قاعدة البيانات: ${e.message}')")
-                        }
+                    // معالجة أخطاء Firebase الخاصة
+                    Log.e("ChildApp", "Firestore Exception", e)
+                    if (e.code == FirebaseFirestoreException.Code.PERMISSION_DENIED) {
+                        sendResult("window.onLinkError('تم رفض الوصول: يرجى نشر قواعد الأمان في Firebase.')")
+                    } else if (e.code == FirebaseFirestoreException.Code.UNAVAILABLE) {
+                        sendResult("window.onLinkError('لا يوجد اتصال بالإنترنت.')")
+                    } else {
+                        sendResult("window.onLinkError('خطأ في قاعدة البيانات: ${e.message}')")
                     }
                     return@launch
                 } catch (e: Exception) {
-                     sendResult("window.onLinkError('خطأ غير متوقع: ${e.message}')")
-                     return@launch
+                    // معالجة أخطاء عامة قد تحتوي على PERMISSION_DENIED كنص
+                    Log.e("ChildApp", "General Write Exception", e)
+                    val msg = e.message ?: ""
+                    if (msg.contains("PERMISSION_DENIED")) {
+                        sendResult("window.onLinkError('خطأ أمان: القواعد في Firebase تمنع الكتابة.')")
+                    } else {
+                        sendResult("window.onLinkError('حدث خطأ غير متوقع أثناء الحفظ.')")
+                    }
+                    return@launch
                 }
 
                 // === الخطوة 4: النجاح ===
@@ -92,7 +96,7 @@ class ChildWebInterface(private val mContext: Context) {
                 sendResult("window.onLinkSuccess()")
 
             } catch (e: Exception) {
-                Log.e("ChildApp", "General Error", e)
+                Log.e("ChildApp", "Global Error", e)
                 sendResult("window.onLinkError('خطأ عام: ${e.message}')")
             }
         }
