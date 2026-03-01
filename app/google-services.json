@@ -92,6 +92,22 @@
           }
         },
         {
+          "client_id": "787676787951-mbjhkqq5v6m9d1s682s188fp2ci7jiot.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.abuzahra.tracker",
+            "certificate_hash": "79681e630ee68d108a8d48d6f7661326bd724e3b"
+          }
+        },
+        {
+          "client_id": "787676787951-mp6g0bchp1jj9jjfe7i2tautpsv8ekjb.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.abuzahra.tracker",
+            "certificate_hash": "65a148189b040c444e0c8305ac32fe5a72deaffb"
+          }
+        },
+        {
           "client_id": "787676787951-qkm5vs3v6lkpujfe9mhegm3tfo6a9s6v.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
