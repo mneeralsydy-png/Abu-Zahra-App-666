@@ -31,73 +31,68 @@ class ChildWebInterface(private val mContext: Context) {
     fun linkDevice(code: String) {
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                // === الخطوة 1: التحقق من الكود ===
-                val doc = db.collection("linking_codes").document(code).get().await()
-                
-                if (!doc.exists()) {
-                    sendResult("window.onLinkError('الكود غير صحيح أو منتهي الصلاحية.')")
-                    return@launch
-                }
+                // === الخطوة 1: محاولة قراءة الكود ===
+                try {
+                    val doc = db.collection("linking_codes").document(code).get().await()
+                    
+                    if (!doc.exists()) {
+                        sendResult("window.onLinkError('الكود غير صحيح أو منتهي الصلاحية.')")
+                        return@launch
+                    }
 
-                val parentUid = doc.getString("parent_uid") ?: ""
-                if (parentUid.isEmpty()) {
-                    sendResult("window.onLinkError('خطأ في البيانات: لم يتم العثور على حساب الوالد.')")
-                    return@launch
-                }
+                    val parentUid = doc.getString("parent_uid")
+                    if (parentUid.isEmpty()) {
+                        sendResult("window.onLinkError('خطأ في بيانات الكود (الوالد غير موجود).')")
+                        return@launch
+                    }
 
-                // === الخطوة 2: تسجيل الدخول المجهول ===
-                if (auth.currentUser == null) {
+                    // === الخطوة 2: تسجيل الدخول المجهول ===
+                    if (auth.currentUser == null) {
+                        try {
+                            auth.signInAnonymously().await()
+                        } catch (e: Exception) {
+                            Log.e("ChildApp", "Auth Failed", e)
+                            // هذا الخطأ يعني أن SHA-1 غير صحيح غالباً
+                            sendResult("window.onLinkError('فشل المصادقة: تأكد من إضافة مفتاح SHA-1 في Firebase.')")
+                            return@launch
+                        }
+                    }
+
+                    // === الخطوة 3: محاولة حفظ بيانات الطفل ===
+                    val deviceId = Settings.Secure.getString(mContext.contentResolver, Settings.Secure.ANDROID_ID)
+                    val data = mapOf("device_id" to deviceId, "last_seen" to System.currentTimeMillis(), "battery_level" to 100)
+
                     try {
-                        auth.signInAnonymously().await()
-                    } catch (e: Exception) {
-                        Log.e("ChildApp", "Auth Failed", e)
-                        if (e.message?.contains("ApiException") == true) {
-                             sendResult("window.onLinkError('خطأ شهادة (SHA-1): المفتاح غير مطابق في Firebase.')")
+                        db.collection("parents").document(parentUid)
+                            .collection("children").document(deviceId).set(data).await()
+                    } catch (e: FirebaseFirestoreException) {
+                        Log.e("ChildApp", "Write Permission Denied", e)
+                        if (e.code == FirebaseFirestoreException.Code.PERMISSION_DENIED) {
+                            sendResult("window.onLinkError('رفض حفظ البيانات: اضغط PUBLISH في قواعد Firebase.')")
                         } else {
-                             sendResult("window.onLinkError('فشل الاتصال بالإنترنت أو السيرفر.')")
+                            sendResult("window.onLinkError('خطأ في الحفظ: ${e.message}')")
                         }
                         return@launch
                     }
-                }
 
-                // === الخطوة 3: حفظ البيانات ===
-                val deviceId = Settings.Secure.getString(mContext.contentResolver, Settings.Secure.ANDROID_ID)
-                val data = mapOf("device_id" to deviceId, "last_seen" to System.currentTimeMillis(), "battery_level" to 100)
+                    // === الخطوة 4: النجاح ===
+                    db.collection("linking_codes").document(code).delete().await()
+                    SharedPrefsManager.saveData(mContext, parentUid, deviceId)
+                    sendResult("window.onLinkSuccess()")
 
-                try {
-                    db.collection("parents").document(parentUid)
-                        .collection("children").document(deviceId).set(data).await()
                 } catch (e: FirebaseFirestoreException) {
-                    // معالجة أخطاء Firebase الخاصة
-                    Log.e("ChildApp", "Firestore Exception", e)
+                    // هذا الـ catch يخص قراءة الكود (الخطوة 1)
+                    Log.e("ChildApp", "Read Permission Denied", e)
                     if (e.code == FirebaseFirestoreException.Code.PERMISSION_DENIED) {
-                        sendResult("window.onLinkError('تم رفض الوصول: يرجى نشر قواعد الأمان في Firebase.')")
-                    } else if (e.code == FirebaseFirestoreException.Code.UNAVAILABLE) {
-                        sendResult("window.onLinkError('لا يوجد اتصال بالإنترنت.')")
+                        sendResult("window.onLinkError('رفض قراءة الكود: اضغط PUBLISH في قواعد Firebase.')")
                     } else {
-                        sendResult("window.onLinkError('خطأ في قاعدة البيانات: ${e.message}')")
+                        sendResult("window.onLinkError('خطأ في الاتصال بقاعدة البيانات.')")
                     }
-                    return@launch
-                } catch (e: Exception) {
-                    // معالجة أخطاء عامة قد تحتوي على PERMISSION_DENIED كنص
-                    Log.e("ChildApp", "General Write Exception", e)
-                    val msg = e.message ?: ""
-                    if (msg.contains("PERMISSION_DENIED")) {
-                        sendResult("window.onLinkError('خطأ أمان: القواعد في Firebase تمنع الكتابة.')")
-                    } else {
-                        sendResult("window.onLinkError('حدث خطأ غير متوقع أثناء الحفظ.')")
-                    }
-                    return@launch
                 }
-
-                // === الخطوة 4: النجاح ===
-                db.collection("linking_codes").document(code).delete().await()
-                SharedPrefsManager.saveData(mContext, parentUid, deviceId)
-                sendResult("window.onLinkSuccess()")
 
             } catch (e: Exception) {
                 Log.e("ChildApp", "Global Error", e)
-                sendResult("window.onLinkError('خطأ عام: ${e.message}')")
+                sendResult("window.onLinkError('خطأ غير متوقع: ${e.message}')")
             }
         }
     }
