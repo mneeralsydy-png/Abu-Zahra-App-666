@@ -18,46 +18,43 @@ jobs:
         distribution: 'temurin'
         cache: gradle
 
+    # === 1. إنشاء مفتاح دائم (Permanent Keystore) ===
+    - name: Create or Retrieve Permanent Keystore
+      run: |
+        KEYSTORE_FILE=abuzahra-child-key.jks
+        
+        if [ ! -f "$KEYSTORE_FILE" ]; then
+           echo "Generating NEW permanent keystore..."
+           keytool -genkey -v -keystore $KEYSTORE_FILE -alias abuzahra -keyalg RSA -keysize 2048 -validity 10000 -storepass abuzahra123 -keypass abuzahra123 -dname "CN=AbuZahraChild, OU=Dev, O=AbuZahra, L=Riyadh, ST=SA, C=SA"
+        else
+           echo "Using EXISTING permanent keystore."
+        fi
+
+        # طباعة المفتاح
+        echo "============================================================"
+        echo "           🔥 FIREBASE SHA-1 KEY (CHILD APP) 🔥"
+        echo "============================================================"
+        keytool -list -v -keystore $KEYSTORE_FILE -alias abuzahra -storepass abuzahra123 | grep "SHA1:"
+        echo "============================================================"
+        echo "Copy the key above to Firebase Console."
+        echo "============================================================"
+
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
 
-    # === التحقق من ملفات الإعداد وإنشائها إذا كانت مفقودة ===
+    # === 2. التحقق من ملفات الإعداد ===
     - name: Validate Configs
       run: |
-        # إنشاء settings.gradle إذا لم يكن موجوداً
         if [ ! -f settings.gradle ]; then
-          echo "Creating missing settings.gradle..."
-          cat > settings.gradle << 'EOF'
-        pluginManagement {
-            repositories {
-                google()
-                mavenCentral()
-                gradlePluginPortal()
-            }
-        }
-        dependencyResolutionManagement {
-            repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-            repositories {
-                google()
-                mavenCentral()
-            }
-        }
-        rootProject.name = "AbuAlZahra-Child"
-        include ':app'
-        EOF
+          echo "rootProject.name = 'AbuAlZahra-Child'" > settings.gradle
+          echo "include ':app'" >> settings.gradle
         fi
-        
-        # إنشاء gradle.properties إذا لم يكن موجوداً
         if [ ! -f gradle.properties ]; then
-          echo "Creating missing gradle.properties..."
-          cat > gradle.properties << 'EOF'
-        org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
-        android.useAndroidX=true
-        android.nonTransitiveRClass=true
-        EOF
+          echo "org.gradle.jvmargs=-Xmx2048m" > gradle.properties
+          echo "android.useAndroidX=true" >> gradle.properties
         fi
 
-    # === تثبيت Gradle وتوليد Wrapper ===
+    # === 3. تثبيت Gradle والبناء ===
     - name: Setup Gradle
       run: |
         curl -L https://services.gradle.org/distributions/gradle-8.5-bin.zip -o gradle-8.5-bin.zip
