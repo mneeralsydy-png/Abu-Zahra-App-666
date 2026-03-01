@@ -16,28 +16,19 @@ jobs:
       with:
         java-version: '17'
         distribution: 'temurin'
-        cache: gradle
 
-    # === 1. إنشاء مفتاح دائم (Permanent Keystore) ===
-    - name: Create or Retrieve Permanent Keystore
+    # === 1. إنشاء وحفظ المفتاح الدائم ===
+    - name: Create Permanent Keystore
       run: |
         KEYSTORE_FILE=abuzahra-child-key.jks
         
+        # إنشاء المفتاح إذا لم يكن موجوداً (كلمة السر: abuzahra123)
         if [ ! -f "$KEYSTORE_FILE" ]; then
            echo "Generating NEW permanent keystore..."
            keytool -genkey -v -keystore $KEYSTORE_FILE -alias abuzahra -keyalg RSA -keysize 2048 -validity 10000 -storepass abuzahra123 -keypass abuzahra123 -dname "CN=AbuZahraChild, OU=Dev, O=AbuZahra, L=Riyadh, ST=SA, C=SA"
         else
            echo "Using EXISTING permanent keystore."
         fi
-
-        # طباعة المفتاح
-        echo "============================================================"
-        echo "           🔥 FIREBASE SHA-1 KEY (CHILD APP) 🔥"
-        echo "============================================================"
-        keytool -list -v -keystore $KEYSTORE_FILE -alias abuzahra -storepass abuzahra123 | grep "SHA1:"
-        echo "============================================================"
-        echo "Copy the key above to Firebase Console."
-        echo "============================================================"
 
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
@@ -54,7 +45,7 @@ jobs:
           echo "android.useAndroidX=true" >> gradle.properties
         fi
 
-    # === 3. تثبيت Gradle والبناء ===
+    # === 3. البناء والتوقيع ===
     - name: Setup Gradle
       run: |
         curl -L https://services.gradle.org/distributions/gradle-8.5-bin.zip -o gradle-8.5-bin.zip
@@ -65,8 +56,30 @@ jobs:
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
       
-    - name: Build Debug APK
+    - name: Build Debug APK (Unsigned)
       run: ./gradlew :app:assembleDebug
+
+    - name: Sign APK with Permanent Key
+      run: |
+        # توقيع الـ APK بالمفتاح الدائم الذي أنشأناه
+        jarsigner -verbose -sigalg SHA1withRSA -digestalg SHA1 -keystore abuzahra-child-key.jks -storepass abuzahra123 app/build/outputs/apk/debug/app-debug.apk abuzahra
+        echo "APK Signed successfully."
+
+    # === 4. استخراج وطباعة المفتاح (SHA-1) ===
+    - name: Extract SHA-1 Key
+      run: |
+        echo "============================================================"
+        echo "               🔥 FIREBASE SHA-1 KEY (CHILD) 🔥"
+        echo "============================================================"
+        echo "Copy the line below (starts with SHA1:):"
+        echo "------------------------------------------------------------"
+        # قراءة التوقيع من داخل ملف الـ APK الموقع
+        keytool -printcert -jarfile app/build/outputs/apk/debug/app-debug.apk | grep "SHA1:"
+        echo "------------------------------------------------------------"
+        echo "1. Go to Firebase Console -> Project Settings"
+        echo "2. Select your App (com.abuzahra.tracker)"
+        echo "3. Click 'Add Fingerprint' and paste the key above."
+        echo "============================================================"
       
     - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
