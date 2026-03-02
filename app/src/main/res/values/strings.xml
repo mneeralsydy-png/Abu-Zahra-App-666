@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Abu Al-Zahra Child</string>
+    <string name="accessibility_service_description">هذه الخدمة مطلوبة لمراقبة التطبيقات ووقت الشاشة للحماية الأبوية.</string>
 </resources>
