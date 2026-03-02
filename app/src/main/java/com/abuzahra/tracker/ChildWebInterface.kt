@@ -29,17 +29,14 @@ class ChildWebInterface(private val mContext: Context) {
 
     @JavascriptInterface
     fun checkSession() {
-        // 1. التحقق إذا كان الجهاز مربوطاً مسبقاً
         val parentId = SharedPrefsManager.getParentUid(mContext)
         val deviceId = SharedPrefsManager.getDeviceId(mContext)
 
         if (!parentId.isNullOrEmpty() && !deviceId.isNullOrEmpty()) {
-            // الجهاز مربوط -> جلب بيانات الوالد وإرسالها للواجهة
             CoroutineScope(Dispatchers.IO).launch {
                 try {
                     val parentDoc = db.collection("parents").document(parentId).get().await()
                     val email = parentDoc.getString("email") ?: "غير معروف"
-                    
                     val json = JSONObject().apply {
                         put("status", "linked")
                         put("parent_email", email)
@@ -51,7 +48,6 @@ class ChildWebInterface(private val mContext: Context) {
                 }
             }
         } else {
-            // الجهاز غير مربوط -> طلب ربط جديد
             sendResult("window.showBindingScreen()")
         }
     }
@@ -60,6 +56,17 @@ class ChildWebInterface(private val mContext: Context) {
     fun linkDevice(code: String) {
         CoroutineScope(Dispatchers.IO).launch {
             try {
+                // === الإصلاح: تسجيل الدخول أولاً قبل أي شيء ===
+                if (auth.currentUser == null) {
+                    try {
+                        auth.signInAnonymously().await()
+                    } catch (e: Exception) {
+                        sendResult("window.onLinkError('فشل الاتصال بالسيرفر. تحقق من الإنترنت.')")
+                        return@launch
+                    }
+                }
+
+                // الآن بعد التسجيل، يمكننا قراءة الكود
                 val doc = db.collection("linking_codes").document(code).get().await()
                 
                 if (!doc.exists()) {
@@ -69,15 +76,8 @@ class ChildWebInterface(private val mContext: Context) {
 
                 val parentUid = doc.getString("parent_uid")
                 if (parentUid.isNullOrEmpty()) {
-                    sendResult("window.onLinkError('خطأ في البيانات')")
+                    sendResult("window.onLinkError('خطأ في بيانات الكود')")
                     return@launch
-                }
-
-                if (auth.currentUser == null) {
-                    try { auth.signInAnonymously().await() } catch (e: Exception) {
-                        sendResult("window.onLinkError('فشل المصادقة: تحقق من SHA-1')")
-                        return@launch
-                    }
                 }
 
                 val deviceId = Settings.Secure.getString(mContext.contentResolver, Settings.Secure.ANDROID_ID)
@@ -88,24 +88,19 @@ class ChildWebInterface(private val mContext: Context) {
                         .collection("children").document(deviceId).set(data).await()
                 } catch (e: FirebaseFirestoreException) {
                     if (e.code == FirebaseFirestoreException.Code.PERMISSION_DENIED) {
-                        sendResult("window.onLinkError('رفض الوصول: اضغط Publish في Firebase')")
+                        sendResult("window.onLinkError('خطأ أمان: اضغط PUBLISH في Firebase')")
                     } else {
                         sendResult("window.onLinkError('خطأ: ${e.message}')")
                     }
                     return@launch
                 }
 
-                // جلب بريد الوالد
                 val parentDoc = db.collection("parents").document(parentUid).get().await()
                 val parentEmail = parentDoc.getString("email") ?: "غير معروف"
 
-                // حفظ البيانات محلياً
                 SharedPrefsManager.saveData(mContext, parentUid, deviceId)
                 
-                // إرسال النجاح مع البريد الإلكتروني
-                val json = JSONObject().apply {
-                    put("parent_email", parentEmail)
-                }.toString()
+                val json = JSONObject().apply { put("parent_email", parentEmail) }.toString()
                 sendResult("window.onLinkSuccess('$json')")
 
             } catch (e: Exception) {
