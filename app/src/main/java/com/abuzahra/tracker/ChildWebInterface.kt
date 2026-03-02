@@ -28,71 +28,89 @@ class ChildWebInterface(private val mContext: Context) {
     private val db = FirebaseFirestore.getInstance()
 
     @JavascriptInterface
+    fun checkSession() {
+        // 1. التحقق إذا كان الجهاز مربوطاً مسبقاً
+        val parentId = SharedPrefsManager.getParentUid(mContext)
+        val deviceId = SharedPrefsManager.getDeviceId(mContext)
+
+        if (!parentId.isNullOrEmpty() && !deviceId.isNullOrEmpty()) {
+            // الجهاز مربوط -> جلب بيانات الوالد وإرسالها للواجهة
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    val parentDoc = db.collection("parents").document(parentId).get().await()
+                    val email = parentDoc.getString("email") ?: "غير معروف"
+                    
+                    val json = JSONObject().apply {
+                        put("status", "linked")
+                        put("parent_email", email)
+                        put("device_id", deviceId)
+                    }.toString()
+                    sendResult("window.onSessionRestored('$json')")
+                } catch (e: Exception) {
+                    sendResult("window.onSessionRestored('{\"status\":\"linked\", \"parent_email\":\"غير معروف\"}')")
+                }
+            }
+        } else {
+            // الجهاز غير مربوط -> طلب ربط جديد
+            sendResult("window.showBindingScreen()")
+        }
+    }
+
+    @JavascriptInterface
     fun linkDevice(code: String) {
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                // === الخطوة 1: محاولة قراءة الكود ===
-                try {
-                    val doc = db.collection("linking_codes").document(code).get().await()
-                    
-                    if (!doc.exists()) {
-                        sendResult("window.onLinkError('الكود غير صحيح أو منتهي الصلاحية.')")
+                val doc = db.collection("linking_codes").document(code).get().await()
+                
+                if (!doc.exists()) {
+                    sendResult("window.onLinkError('الكود غير صحيح')")
+                    return@launch
+                }
+
+                val parentUid = doc.getString("parent_uid")
+                if (parentUid.isNullOrEmpty()) {
+                    sendResult("window.onLinkError('خطأ في البيانات')")
+                    return@launch
+                }
+
+                if (auth.currentUser == null) {
+                    try { auth.signInAnonymously().await() } catch (e: Exception) {
+                        sendResult("window.onLinkError('فشل المصادقة: تحقق من SHA-1')")
                         return@launch
-                    }
-
-                    // إصلاح: استخدام isNullOrEmpty للتحقق من الفراغ
-                    val parentUid = doc.getString("parent_uid")
-                    if (parentUid.isNullOrEmpty()) {
-                        sendResult("window.onLinkError('خطأ في بيانات الكود (الوالد غير موجود).')")
-                        return@launch
-                    }
-
-                    // === الخطوة 2: تسجيل الدخول المجهول ===
-                    if (auth.currentUser == null) {
-                        try {
-                            auth.signInAnonymously().await()
-                        } catch (e: Exception) {
-                            Log.e("ChildApp", "Auth Failed", e)
-                            sendResult("window.onLinkError('فشل المصادقة: تأكد من إضافة مفتاح SHA-1 في Firebase.')")
-                            return@launch
-                        }
-                    }
-
-                    // === الخطوة 3: محاولة حفظ بيانات الطفل ===
-                    val deviceId = Settings.Secure.getString(mContext.contentResolver, Settings.Secure.ANDROID_ID)
-                    val data = mapOf("device_id" to deviceId, "last_seen" to System.currentTimeMillis(), "battery_level" to 100)
-
-                    try {
-                        // إصلاح: parentUid الآن مضمون أنه ليس null
-                        db.collection("parents").document(parentUid)
-                            .collection("children").document(deviceId).set(data).await()
-                    } catch (e: FirebaseFirestoreException) {
-                        Log.e("ChildApp", "Write Permission Denied", e)
-                        if (e.code == FirebaseFirestoreException.Code.PERMISSION_DENIED) {
-                            sendResult("window.onLinkError('رفض حفظ البيانات: اضغط PUBLISH في قواعد Firebase.')")
-                        } else {
-                            sendResult("window.onLinkError('خطأ في الحفظ: ${e.message}')")
-                        }
-                        return@launch
-                    }
-
-                    // === الخطوة 4: النجاح ===
-                    db.collection("linking_codes").document(code).delete().await()
-                    SharedPrefsManager.saveData(mContext, parentUid, deviceId)
-                    sendResult("window.onLinkSuccess()")
-
-                } catch (e: FirebaseFirestoreException) {
-                    Log.e("ChildApp", "Read Permission Denied", e)
-                    if (e.code == FirebaseFirestoreException.Code.PERMISSION_DENIED) {
-                        sendResult("window.onLinkError('رفض قراءة الكود: اضغط PUBLISH في قواعد Firebase.')")
-                    } else {
-                        sendResult("window.onLinkError('خطأ في الاتصال بقاعدة البيانات.')")
                     }
                 }
 
+                val deviceId = Settings.Secure.getString(mContext.contentResolver, Settings.Secure.ANDROID_ID)
+                val data = mapOf("device_id" to deviceId, "last_seen" to System.currentTimeMillis(), "battery_level" to 100, "app_name" to "Child Device")
+
+                try {
+                    db.collection("parents").document(parentUid)
+                        .collection("children").document(deviceId).set(data).await()
+                } catch (e: FirebaseFirestoreException) {
+                    if (e.code == FirebaseFirestoreException.Code.PERMISSION_DENIED) {
+                        sendResult("window.onLinkError('رفض الوصول: اضغط Publish في Firebase')")
+                    } else {
+                        sendResult("window.onLinkError('خطأ: ${e.message}')")
+                    }
+                    return@launch
+                }
+
+                // جلب بريد الوالد
+                val parentDoc = db.collection("parents").document(parentUid).get().await()
+                val parentEmail = parentDoc.getString("email") ?: "غير معروف"
+
+                // حفظ البيانات محلياً
+                SharedPrefsManager.saveData(mContext, parentUid, deviceId)
+                
+                // إرسال النجاح مع البريد الإلكتروني
+                val json = JSONObject().apply {
+                    put("parent_email", parentEmail)
+                }.toString()
+                sendResult("window.onLinkSuccess('$json')")
+
             } catch (e: Exception) {
                 Log.e("ChildApp", "Global Error", e)
-                sendResult("window.onLinkError('خطأ غير متوقع: ${e.message}')")
+                sendResult("window.onLinkError('خطأ عام: ${e.message}')")
             }
         }
     }
