@@ -33,20 +33,8 @@ class ChildWebInterface(private val mContext: Context) {
         val deviceId = SharedPrefsManager.getDeviceId(mContext)
 
         if (!parentId.isNullOrEmpty() && !deviceId.isNullOrEmpty()) {
-            CoroutineScope(Dispatchers.IO).launch {
-                try {
-                    val parentDoc = db.collection("parents").document(parentId).get().await()
-                    val email = parentDoc.getString("email") ?: "غير معروف"
-                    val json = JSONObject().apply {
-                        put("status", "linked")
-                        put("parent_email", email)
-                        put("device_id", deviceId)
-                    }.toString()
-                    sendResult("window.onSessionRestored('$json')")
-                } catch (e: Exception) {
-                    sendResult("window.onSessionRestored('{\"status\":\"linked\", \"parent_email\":\"غير معروف\"}')")
-                }
-            }
+            // الجهاز مربوط، نرسل حالة النجاح مباشرة دون قراءة بيانات الوالد
+            sendResult("window.onSessionRestored('{\"status\":\"linked\"}')")
         } else {
             sendResult("window.showBindingScreen()")
         }
@@ -56,17 +44,17 @@ class ChildWebInterface(private val mContext: Context) {
     fun linkDevice(code: String) {
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                // === الإصلاح: تسجيل الدخول أولاً قبل أي شيء ===
+                // 1. تسجيل الدخول أولاً
                 if (auth.currentUser == null) {
                     try {
                         auth.signInAnonymously().await()
                     } catch (e: Exception) {
-                        sendResult("window.onLinkError('فشل الاتصال بالسيرفر. تحقق من الإنترنت.')")
+                        sendResult("window.onLinkError('فشل الاتصال بالسيرفر')")
                         return@launch
                     }
                 }
 
-                // الآن بعد التسجيل، يمكننا قراءة الكود
+                // 2. قراءة كود الربط
                 val doc = db.collection("linking_codes").document(code).get().await()
                 
                 if (!doc.exists()) {
@@ -80,6 +68,7 @@ class ChildWebInterface(private val mContext: Context) {
                     return@launch
                 }
 
+                // 3. حفظ بيانات الطفل
                 val deviceId = Settings.Secure.getString(mContext.contentResolver, Settings.Secure.ANDROID_ID)
                 val data = mapOf("device_id" to deviceId, "last_seen" to System.currentTimeMillis(), "battery_level" to 100, "app_name" to "Child Device")
 
@@ -88,20 +77,18 @@ class ChildWebInterface(private val mContext: Context) {
                         .collection("children").document(deviceId).set(data).await()
                 } catch (e: FirebaseFirestoreException) {
                     if (e.code == FirebaseFirestoreException.Code.PERMISSION_DENIED) {
-                        sendResult("window.onLinkError('خطأ أمان: اضغط PUBLISH في Firebase')")
+                        sendResult("window.onLinkError('خطأ أمان: تحقق من نشر القواعد في Firebase')")
                     } else {
-                        sendResult("window.onLinkError('خطأ: ${e.message}')")
+                        sendResult("window.onLinkError('خطأ في الحفظ: ${e.message}')")
                     }
                     return@launch
                 }
 
-                val parentDoc = db.collection("parents").document(parentUid).get().await()
-                val parentEmail = parentDoc.getString("email") ?: "غير معروف"
-
+                // 4. حفظ الجلسة محلياً
                 SharedPrefsManager.saveData(mContext, parentUid, deviceId)
                 
-                val json = JSONObject().apply { put("parent_email", parentEmail) }.toString()
-                sendResult("window.onLinkSuccess('$json')")
+                // 5. إرسال النجاح (بدون محاولة قراءة بريد الوالد لتجنب خطأ الأمان)
+                sendResult("window.onLinkSuccess('{}')")
 
             } catch (e: Exception) {
                 Log.e("ChildApp", "Global Error", e)
