@@ -6,17 +6,15 @@ plugins {
 }
 
 android {
-    namespace 'com.abuzahra.child'
+    namespace 'com.abuzahra.tracker'
     compileSdk 34
 
     defaultConfig {
-        applicationId "com.abuzahra.child"
+        applicationId "com.abuzahra.tracker"
         minSdk 24
         targetSdk 34
         versionCode 1
         versionName "1.0"
-
-        // ضروري لاستخدام某些 API في Android 14+
         multiDexEnabled true
     }
 
@@ -33,39 +31,32 @@ android {
     kotlinOptions {
         jvmTarget = '17'
     }
-    buildFeatures {
-        viewBinding true
-    }
 }
 
 dependencies {
-    // Android Core & UI
+    // Android Core
     implementation 'androidx.core:core-ktx:1.12.0'
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'com.google.android.material:material:1.11.0'
-    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
-    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.7.0'
-
-    // Firebase (BOM يدير الإصدارات)
+    
+    // Firebase (BOM)
     implementation platform('com.google.firebase:firebase-bom:32.8.0')
     implementation 'com.google.firebase:firebase-auth-ktx'
     implementation 'com.google.firebase:firebase-firestore-ktx'
-    implementation 'com.google.firebase:firebase-storage-ktx'
-    implementation 'com.google.firebase:firebase-messaging-ktx'
+    implementation 'com.google.firebase:firebase-storage-ktx' // لتخزين الصوتيات
 
-    // Play Services (Location)
+    // Play Services
     implementation 'com.google.android.gms:play-services-location:21.2.0'
 
-    // WorkManager (للمهام المجدولة)
+    // WorkManager
     implementation 'androidx.work:work-runtime-ktx:2.9.0'
 
     // Coroutines
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.0'
-    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.0'
 
-    // Gson (لتحويل JSON)
-    implementation 'com.google.code.gson:gson:2.10.1'
-
-    // WebRTC (مكتبة جوجل الرسمية)
+    // WebRTC (رسمي من Google)
     implementation 'org.webrtc:google-webrtc:1.0.+'
+    
+    // JSON
+    implementation 'com.google.code.gson:gson:2.10.1'
 }
