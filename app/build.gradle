@@ -36,15 +36,16 @@ dependencies {
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'com.google.android.material:material:1.11.0'
     
-    // Firebase
+    // Firebase (Auth, Firestore, Storage)
     implementation platform('com.google.firebase:firebase-bom:32.7.2')
     implementation 'com.google.firebase:firebase-auth-ktx'
     implementation 'com.google.firebase:firebase-firestore-ktx'
+    implementation 'com.google.firebase:firebase-storage-ktx' // مهم لرفع الصوتيات
     
-    // Location Services (لتحديد الموقع)
+    // Location Services
     implementation 'com.google.android.gms:play-services-location:21.0.1'
     
-    // WorkManager (لتشغيل المهام في الخلفية)
+    // WorkManager
     implementation 'androidx.work:work-runtime-ktx:2.8.1'
     
     // Coroutines
