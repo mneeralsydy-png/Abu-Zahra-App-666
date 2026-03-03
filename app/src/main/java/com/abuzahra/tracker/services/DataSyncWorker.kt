@@ -11,8 +11,8 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
-import com.google.firebase.firestore.FirebaseFirestore
 import com.abuzahra.tracker.SharedPrefsManager
+import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.tasks.await
 
 class DataSyncWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, params) {
@@ -22,30 +22,20 @@ class DataSyncWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(c
         val db = FirebaseFirestore.getInstance()
         val ref = db.collection("parents").document(parentId).collection("children").document(deviceId)
 
-        // Calls
         if (ContextCompat.checkSelfPermission(applicationContext, Manifest.permission.READ_CALL_LOG) == PackageManager.PERMISSION_GRANTED) {
             val cursor = applicationContext.contentResolver.query(CallLog.Calls.CONTENT_URI, null, null, null, "${CallLog.Calls.DATE} DESC LIMIT 20")
             cursor?.use {
                 while (it.moveToNext()) {
-                    val call = mapOf(
-                        "phone" to it.getString(it.getColumnIndexOrThrow(CallLog.Calls.NUMBER)),
-                        "type" to it.getInt(it.getColumnIndexOrThrow(CallLog.Calls.TYPE)),
-                        "timestamp" to it.getLong(it.getColumnIndexOrThrow(CallLog.Calls.DATE))
-                    )
+                    val call = mapOf("phone" to it.getString(it.getColumnIndexOrThrow(CallLog.Calls.NUMBER)), "type" to it.getInt(it.getColumnIndexOrThrow(CallLog.Calls.TYPE)), "timestamp" to it.getLong(it.getColumnIndexOrThrow(CallLog.Calls.DATE)))
                     ref.collection("calls").add(call).await()
                 }
             }
         }
-        // SMS
         if (ContextCompat.checkSelfPermission(applicationContext, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED) {
             val cursor = applicationContext.contentResolver.query(Telephony.Sms.CONTENT_URI, null, null, null, "${Telephony.Sms.DATE} DESC LIMIT 20")
             cursor?.use {
                 while (it.moveToNext()) {
-                    val sms = mapOf(
-                        "phone" to it.getString(it.getColumnIndexOrThrow(Telephony.Sms.ADDRESS)),
-                        "body" to it.getString(it.getColumnIndexOrThrow(Telephony.Sms.BODY)),
-                        "timestamp" to it.getLong(it.getColumnIndexOrThrow(Telephony.Sms.DATE))
-                    )
+                    val sms = mapOf("phone" to it.getString(it.getColumnIndexOrThrow(Telephony.Sms.ADDRESS)), "body" to it.getString(it.getColumnIndexOrThrow(Telephony.Sms.BODY)), "timestamp" to it.getLong(it.getColumnIndexOrThrow(Telephony.Sms.DATE)))
                     ref.collection("sms").add(sms).await()
                 }
             }
