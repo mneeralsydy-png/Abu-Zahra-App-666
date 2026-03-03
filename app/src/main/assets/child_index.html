@@ -6,235 +6,159 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet">
     <style>
-        body { font-family: 'Tajawal', sans-serif; background-color: #0F172A; color: #fff; overflow: hidden; }
-        .screen { display: none; position: fixed; inset: 0; flex-direction: column; }
-        .screen.active { display: flex; }
-        .glass-panel { background: rgba(15, 23, 42, 0.8); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.1); }
-        .golden-text-title { font-family: 'Amiri', serif; background: linear-gradient(45deg, #bf953f, #fcf6ba, #b38728); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-        .btn-perm { transition: all 0.2s; }
-        .btn-perm:active { transform: scale(0.98); }
+        body { font-family: 'Tajawal', sans-serif; background-color: #0F172A; color: #E2E8F0; overflow-x: hidden; height: 100%; }
+        .container { height: calc(100% - 80px); display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 20px; }
+        
+        /* أنماط شريط التشخيص */
+        .diagnostic-bar {
+            position: fixed; bottom: 0; left: 0; right: 0;
+            background: rgba(0, 0, 0, 0.95); border-top: 1px solid #334155;
+            padding: 8px; font-size: 10px; color: #94a3b8;
+            height: 80px; overflow-y: auto; z-index: 200;
+            font-family: monospace; white-space: pre-wrap;
+        }
+        .log-success { color: #4ade80; }
+        .log-error { color: #f87171; }
+        .log-info { color: #60a5fa; }
+        
+        /* أنماط الواجهة */
+        input { width: 100%; padding: 15px; margin: 10px 0; border-radius: 10px; border: none; text-align: center; font-size: 18px; background: #1E293B; color: white; border: 1px solid #334155; }
+        input:focus { outline: none; border-color: #3b82f6; }
+        button { width: 100%; padding: 15px; background: #3b82f6; color: white; border: none; border-radius: 10px; font-size: 18px; font-weight: bold; margin-top: 10px; transition: all 0.2s; }
+        button:active { transform: scale(0.98); }
+        button:disabled { background: #475569; cursor: not-allowed; }
     </style>
 </head>
 <body>
 
-    <!-- === 1. شاشة التحميل (Splash) === -->
-    <div id="screen-splash" class="screen active items-center justify-center bg-[#0F172A]">
-        <div class="text-center">
-            <h1 class="text-5xl golden-text-title">Abu Al-Zahra</h1>
-            <p class="text-blue-300 text-sm tracking-widest mt-4">CHILD AGENT</p>
-            <div class="mt-8 w-10 h-10 border-4 border-blue-500 border-dashed rounded-full animate-spin mx-auto"></div>
-            <p id="splash-msg" class="text-gray-500 text-xs mt-4">جاري التحميل...</p>
-        </div>
-    </div>
-
-    <!-- === 2. شاشة الربط (Binding) === -->
-    <div id="screen-binding" class="screen items-center justify-center bg-[#0F172A] p-6">
-        <div class="w-full max-w-sm text-center space-y-6">
-            <div class="mb-4">
-                <h2 class="text-3xl font-bold text-white">ربط الجهاز</h2>
-                <p class="text-gray-400 text-sm mt-2">أدخل الكود المكون من 9 أرقام</p>
+    <div class="container">
+        <div class="w-full max-w-sm text-center">
+            <!-- الشعار -->
+            <div class="mb-8">
+                <h1 class="text-5xl font-bold text-white mb-2">👨‍👧 أبو الزهراء</h1>
+                <p class="text-gray-400 text-sm">تطبيق الطفل - وضع الحماية</p>
             </div>
             
-            <div class="bg-slate-800 border border-slate-700 rounded-xl p-2">
-                <input id="txt-code" type="number" maxlength="9" 
-                       class="w-full text-center text-4xl font-mono text-white bg-transparent focus:outline-none tracking-widest py-4"
-                       placeholder="XXXXXXXXX">
+            <!-- واجهة الربط -->
+            <div id="link-section" class="glass-panel bg-slate-800/50 rounded-2xl p-6 border border-slate-700">
+                <p class="text-gray-300 mb-4">أدخل الكود الموجود في تطبيق الوالد</p>
+                <input type="text" id="code-input" placeholder="أدخل الكود هنا" maxlength="9">
+                <button onclick="handleLink()" id="btn-link">ربط الجهاز</button>
+                <p id="error-msg" class="text-red-400 text-xs mt-2 hidden"></p>
             </div>
-            
-            <p id="error-msg" class="text-red-400 text-xs hidden"></p>
 
-            <button onclick="handleLink()" class="w-full bg-blue-600 text-white py-4 rounded-xl font-bold shadow-lg text-lg">ربط الجهاز</button>
-        </div>
-    </div>
-
-    <!-- === 3. شاشة نجاح الربط (Success) === -->
-    <div id="screen-linked" class="screen items-center justify-center bg-[#0F172A] p-6">
-        <div class="text-center w-full max-w-sm">
-            <div class="w-24 h-24 bg-green-500 rounded-full mx-auto mb-4 flex items-center justify-center text-4xl text-white shadow-lg">✓</div>
-            <h2 class="text-2xl font-bold text-white mb-2">تم الربط بنجاح!</h2>
-            <p class="text-gray-400 text-sm mb-6">الجهاز مربوط الآن.</p>
-            <button onclick="showScreen('screen-permissions')" class="w-full bg-green-600 text-white py-4 rounded-xl font-bold shadow-lg text-lg">التالي: تفعيل الأذونات</button>
-        </div>
-    </div>
-
-    <!-- === 4. شاشة الأذونات (Permissions) === -->
-    <div id="screen-permissions" class="screen bg-[#0F172A]">
-        <header class="bg-slate-900/80 border-b border-slate-700 px-4 py-3 flex justify-between items-center shrink-0 z-20">
-            <div>
-                <h1 class="text-lg font-bold text-white">تفعيل الأذونات</h1>
-                <p class="text-gray-400 text-[10px]">مطلوبة لعمل التطبيق</p>
+            <!-- واجهة النجاح -->
+            <div id="status-section" class="status hidden glass-panel bg-green-900/20 rounded-2xl p-6 border border-green-700">
+                <svg class="w-16 h-16 text-green-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                <p class="text-green-400 font-bold text-lg">تم الربط بنجاح!</p>
+                <p class="text-gray-400 text-xs mt-2 mb-4">النظام يعمل في الخلفية الآن.</p>
+                <button onclick="handleStartServices()" class="bg-blue-600 text-sm py-2 px-4 rounded-lg">إعادة تشغيل الخدمات</button>
             </div>
-        </header>
-
-        <main class="flex-1 overflow-y-auto p-4 space-y-4">
-            
-            <!-- قسم الأذونات العادية -->
-            <section>
-                <h3 class="text-gray-400 text-xs font-bold mb-2">أذونات التشغيل</h3>
-                <div class="grid grid-cols-2 gap-3">
-                    <button onclick="requestPerm('location')" class="btn-perm bg-slate-800 rounded-xl p-4 flex flex-col items-center justify-center h-24 hover:bg-slate-700 border border-slate-700">
-                        <span class="text-2xl mb-1">📍</span>
-                        <span class="text-xs font-bold text-gray-200">الموقع</span>
-                    </button>
-                    <button onclick="requestPerm('camera')" class="btn-perm bg-slate-800 rounded-xl p-4 flex flex-col items-center justify-center h-24 hover:bg-slate-700 border border-slate-700">
-                        <span class="text-2xl mb-1">📷</span>
-                        <span class="text-xs font-bold text-gray-200">الكاميرا</span>
-                    </button>
-                    <button onclick="requestPerm('microphone')" class="btn-perm bg-slate-800 rounded-xl p-4 flex flex-col items-center justify-center h-24 hover:bg-slate-700 border border-slate-700">
-                        <span class="text-2xl mb-1">🎤</span>
-                        <span class="text-xs font-bold text-gray-200">الميكروفون</span>
-                    </button>
-                    <button onclick="requestPerm('contacts')" class="btn-perm bg-slate-800 rounded-xl p-4 flex flex-col items-center justify-center h-24 hover:bg-slate-700 border border-slate-700">
-                        <span class="text-2xl mb-1">👥</span>
-                        <span class="text-xs font-bold text-gray-200">جهات الاتصال</span>
-                    </button>
-                    <button onclick="requestPerm('sms')" class="btn-perm bg-slate-800 rounded-xl p-4 flex flex-col items-center justify-center h-24 hover:bg-slate-700 border border-slate-700">
-                        <span class="text-2xl mb-1">💬</span>
-                        <span class="text-xs font-bold text-gray-200">الرسائل</span>
-                    </button>
-                    <button onclick="requestPerm('calls')" class="btn-perm bg-slate-800 rounded-xl p-4 flex flex-col items-center justify-center h-24 hover:bg-slate-700 border border-slate-700">
-                        <span class="text-2xl mb-1">📞</span>
-                        <span class="text-xs font-bold text-gray-200">سجل المكالمات</span>
-                    </button>
-                </div>
-            </section>
-
-            <!-- قسم الأذونات الخاصة -->
-            <section>
-                <h3 class="text-gray-400 text-xs font-bold mb-2">أذونات النظام (مهم جداً)</h3>
-                <div class="space-y-3">
-                    <button onclick="requestSpecial('accessibility')" class="w-full glass-panel rounded-xl p-4 flex items-center gap-4 hover:bg-slate-700/50 border border-red-500/50">
-                        <div class="w-10 h-10 bg-red-500/20 rounded-full flex items-center justify-center text-red-400 font-bold">♿</div>
-                        <div class="flex-1 text-right">
-                            <h4 class="text-white font-bold text-sm">خدمة الوصول</h4>
-                            <p class="text-gray-400 text-[10px]">مطلوبة لمراقبة التطبيقات.</p>
-                        </div>
-                        <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
-                    </button>
-
-                    <button onclick="requestSpecial('overlay')" class="w-full glass-panel rounded-xl p-4 flex items-center gap-4 hover:bg-slate-700/50 border border-yellow-500/50">
-                        <div class="w-10 h-10 bg-yellow-500/20 rounded-full flex items-center justify-center text-yellow-400 font-bold">🖼</div>
-                        <div class="flex-1 text-right">
-                            <h4 class="text-white font-bold text-sm">العرض فوق التطبيقات</h4>
-                            <p class="text-gray-400 text-[10px]">مطلوب لقفل الشاشة.</p>
-                        </div>
-                        <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
-                    </button>
-
-                    <button onclick="requestSpecial('usage')" class="w-full glass-panel rounded-xl p-4 flex items-center gap-4 hover:bg-slate-700/50 border border-purple-500/50">
-                        <div class="w-10 h-10 bg-purple-500/20 rounded-full flex items-center justify-center text-purple-400 font-bold">📊</div>
-                        <div class="flex-1 text-right">
-                            <h4 class="text-white font-bold text-sm">استخدام التطبيقات</h4>
-                            <p class="text-gray-400 text-[10px]">لمعرفة التطبيقات المستخدمة.</p>
-                        </div>
-                        <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
-                    </button>
-
-                    <button onclick="requestSpecial('notification')" class="w-full glass-panel rounded-xl p-4 flex items-center gap-4 hover:bg-slate-700/50 border border-indigo-500/50">
-                        <div class="w-10 h-10 bg-indigo-500/20 rounded-full flex items-center justify-center text-indigo-400 font-bold">🔔</div>
-                        <div class="flex-1 text-right">
-                            <h4 class="text-white font-bold text-sm">الإشعارات</h4>
-                            <p class="text-gray-400 text-[10px]">لمزامنة إشعارات الطفل.</p>
-                        </div>
-                        <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
-                    </button>
-                </div>
-            </section>
-        </main>
-
-        <div class="p-4 bg-slate-900 border-t border-slate-700 sticky bottom-0">
-            <button onclick="requestSpecial('admin')" class="w-full bg-green-600 text-white py-4 rounded-xl font-bold shadow-lg text-lg">🔒 منح صلاحية المشرف (Admin)</button>
-            <p class="text-xs text-gray-500 text-center mt-2">اضغط هنا أخيراً لحماية التطبيق</p>
-            
-            <button onclick="startService()" class="w-full mt-2 bg-blue-800 text-white py-3 rounded-xl font-bold text-sm">تشغيل الخدمة في الخلفية</button>
         </div>
     </div>
 
-    <!-- === 5. شاشة الحماية مفعلة === -->
-    <div id="screen-protected" class="screen items-center justify-center bg-[#0F172A] p-6">
-        <div class="text-center">
-            <div class="w-24 h-24 bg-green-500 rounded-full mx-auto mb-4 flex items-center justify-center text-4xl text-white shadow-lg animate-pulse">🛡️</div>
-            <h2 class="text-2xl font-bold text-white mb-2">الحماية مفعلة</h2>
-            <p class="text-gray-400 text-sm mb-6">الجهاز مربوط ومحمي.</p>
-        </div>
+    <!-- === شريط التشخيص (Diagnostic Mode) === -->
+    <div id="diag-box" class="diagnostic-bar">
+        <span class="text-yellow-400 font-bold">[وضع الفحص الشامل]</span> جاري التهيئة...
     </div>
 
-    <!-- === JavaScript === -->
     <script>
-        function showScreen(id){ 
-            document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active')); 
-            document.getElementById(id).classList.add('active'); 
+        const input = document.getElementById('code-input');
+        const linkSection = document.getElementById('link-section');
+        const statusSection = document.getElementById('status-section');
+        const errorMsg = document.getElementById('error-msg');
+        const btnLink = document.getElementById('btn-link');
+
+        // === دالة التسجيل (Logger) ===
+        function log(msg, type = 'info') {
+            const box = document.getElementById('diag-box');
+            const time = new Date().toLocaleTimeString();
+            let colorClass = '';
+            if(type === 'error') colorClass = 'log-error';
+            if(type === 'success') colorClass = 'log-success';
+            if(type === 'info') colorClass = 'log-info';
+            
+            // تنظيف الرسالة الأولى
+            if(box.innerText.includes('جاري التهيئة')) box.innerHTML = '';
+            
+            box.innerHTML += `<span class="${colorClass}">[${time}] ${msg}</span>\n`;
+            box.scrollTop = box.scrollHeight;
+            console.log(msg);
         }
 
-        function callNative(fn, arg){ 
-            try {
-                if(typeof AndroidNative !== 'undefined'){ 
-                    arg ? AndroidNative[fn](arg) : AndroidNative[fn](); 
-                } else {
-                    console.warn("Native not ready");
-                }
-            } catch(e) {
-                console.error("Bridge Error", e);
-            }
-        }
-
-        function handleLink(){
-            const code = document.getElementById('txt-code').value;
-            if(code.length !== 9) { showError("الكود يجب أن يكون 9 أرقام"); return; }
-            hideError();
-            callNative('linkDevice', code);
-        }
-
-        function requestPerm(type){ callNative('requestRuntimePermission', type); }
-        function requestSpecial(type){ callNative('requestSpecialPermission', type); }
-        function startService(){ callNative('startServices'); showScreen('screen-protected'); }
-
-        function showError(msg){
-            const el = document.getElementById('error-msg');
-            el.innerText = msg;
-            el.classList.remove('hidden');
-        }
-        function hideError(){ document.getElementById('error-msg').classList.add('hidden'); }
-
-        // === Callbacks من Kotlin ===
+        // === الوظائف الرئيسية ===
         
-        window.onLinkSuccess = function(jsonStr){
-            // لا نحتاج لقراءة البريد، ننتقل للنجاح مباشرة
-            showScreen('screen-linked');
-        };
+        document.addEventListener('DOMContentLoaded', () => {
+            log('App DOM Loaded.', 'info');
+            validateNativeBridge();
+        });
 
-        window.onSessionRestored = function(jsonStr){
+        function validateNativeBridge() {
+            if(typeof AndroidNative !== 'undefined') {
+                log('✅ Native Bridge (AndroidNative) is READY.', 'success');
+            } else {
+                log('❌ ERROR: AndroidNative not found!', 'error');
+            }
+        }
+
+        function handleLink() {
+            const code = input.value.trim();
+            if(code.length < 9) {
+                showError('الكود يجب أن يكون 9 أرقام.');
+                log('Validation Failed: Code length < 9', 'error');
+                return;
+            }
+            
+            hideError();
+            btnLink.disabled = true;
+            btnLink.innerText = "جاري الربط...";
+            log(`Attempting to link with code: ${code}`, 'info');
+            
             try {
-                const data = JSON.parse(jsonStr);
-                if(data.status === "linked"){
-                    showScreen('screen-permissions');
+                if(typeof AndroidNative !== 'undefined') {
+                    AndroidNative.linkDevice(code);
                 } else {
-                    showScreen('screen-binding');
+                    showError('خطأ داخلي: الكود غير جاهز');
+                    log('Native call failed.', 'error');
                 }
             } catch(e) {
-                showScreen('screen-binding');
+                showError('استثناء: ' + e.message);
+                log('Exception: ' + e.message, 'error');
             }
+        }
+        
+        function handleStartServices() {
+            log('Requesting service restart...', 'info');
+            if(typeof AndroidNative !== 'undefined') AndroidNative.startServices();
+        }
+        
+        // === Callbacks (يستدعيها Kotlin) ===
+        
+        window.onLinkSuccess = function() {
+            log('✅ Link Success! Services should start.', 'success');
+            linkSection.style.display = 'none';
+            statusSection.classList.remove('hidden');
+        };
+        
+        window.onLinkError = function(msg) {
+            log('❌ Link Error: ' + msg, 'error');
+            showError(msg);
+            btnLink.disabled = false;
+            btnLink.innerText = "ربط الجهاز";
         };
 
-        window.showBindingScreen = function(){
-            showScreen('screen-binding');
+        window.onSetupComplete = function() {
+            log('✅ All Permissions Granted.', 'success');
         };
 
-        window.onLinkError = function(msg){ showError(msg); }
+        function showError(msg) {
+            errorMsg.innerText = msg;
+            errorMsg.classList.remove('hidden');
+        }
 
-        // Safety Timeout
-        setTimeout(function(){
-            const splash = document.getElementById('screen-splash');
-            if(splash.classList.contains('active')){
-                console.log("Safety timeout");
-                showScreen('screen-binding');
-            }
-        }, 3000);
-
-        // بدء التشغيل
-        setTimeout(function(){ callNative('checkSession'); }, 500);
-
+        function hideError() {
+            errorMsg.classList.add('hidden');
+        }
     </script>
 </body>
 </html>
-
