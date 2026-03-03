@@ -6,13 +6,10 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
-    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
-    <uses-permission android:name="android.permission.VIBRATE" />
-    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />
 
@@ -22,7 +19,6 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 
     <!-- === صلاحيات الموقع === -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
@@ -67,7 +63,7 @@
             </intent-filter>
         </activity>
 
-        <!-- خدمة التتبع الأساسية (موقع، بطارية) -->
+        <!-- خدمة التتبع الأساسية -->
         <service
             android:name=".services.MainTrackerService"
             android:enabled="true"
@@ -79,18 +75,6 @@
             android:name=".services.CallRecorderService"
             android:exported="false"
             android:foregroundServiceType="microphone" />
-
-        <!-- خدمة بث الشاشة (WebRTC) -->
-        <service
-            android:name=".services.ScreenCaptureService"
-            android:exported="false"
-            android:foregroundServiceType="mediaProjection" />
-            
-        <!-- خدمة البث الحي -->
-        <service
-            android:name=".services.LiveStreamService"
-            android:exported="false"
-            android:foregroundServiceType="camera|microphone" />
 
         <!-- خدمة الإشعارات -->
         <service
