@@ -28,47 +28,32 @@ class ChildWebInterface(private val mContext: Context) {
     private val db = FirebaseFirestore.getInstance()
 
     @JavascriptInterface
-    fun checkSession() {
-        val parentId = SharedPrefsManager.getParentUid(mContext)
-        val deviceId = SharedPrefsManager.getDeviceId(mContext)
-
-        if (!parentId.isNullOrEmpty() && !deviceId.isNullOrEmpty()) {
-            // الجهاز مربوط، نرسل حالة النجاح مباشرة دون قراءة بيانات الوالد
-            sendResult("window.onSessionRestored('{\"status\":\"linked\"}')")
-        } else {
-            sendResult("window.showBindingScreen()")
-        }
-    }
-
-    @JavascriptInterface
     fun linkDevice(code: String) {
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                // 1. تسجيل الدخول أولاً
-                if (auth.currentUser == null) {
-                    try {
-                        auth.signInAnonymously().await()
-                    } catch (e: Exception) {
-                        sendResult("window.onLinkError('فشل الاتصال بالسيرفر')")
-                        return@launch
-                    }
-                }
-
-                // 2. قراءة كود الربط
                 val doc = db.collection("linking_codes").document(code).get().await()
                 
                 if (!doc.exists()) {
-                    sendResult("window.onLinkError('الكود غير صحيح')")
+                    sendResult("window.onLinkError('الكود غير صحيح أو منتهي الصلاحية.')")
                     return@launch
                 }
 
                 val parentUid = doc.getString("parent_uid")
                 if (parentUid.isNullOrEmpty()) {
-                    sendResult("window.onLinkError('خطأ في بيانات الكود')")
+                    sendResult("window.onLinkError('خطأ في بيانات الكود.')")
                     return@launch
                 }
 
-                // 3. حفظ بيانات الطفل
+                if (auth.currentUser == null) {
+                    try {
+                        auth.signInAnonymously().await()
+                    } catch (e: Exception) {
+                        Log.e("ChildApp", "Auth Failed", e)
+                        sendResult("window.onLinkError('فشل المصادقة: تأكد من إضافة مفتاح SHA-1 في Firebase.')")
+                        return@launch
+                    }
+                }
+
                 val deviceId = Settings.Secure.getString(mContext.contentResolver, Settings.Secure.ANDROID_ID)
                 val data = mapOf("device_id" to deviceId, "last_seen" to System.currentTimeMillis(), "battery_level" to 100, "app_name" to "Child Device")
 
@@ -76,19 +61,26 @@ class ChildWebInterface(private val mContext: Context) {
                     db.collection("parents").document(parentUid)
                         .collection("children").document(deviceId).set(data).await()
                 } catch (e: FirebaseFirestoreException) {
+                    Log.e("ChildApp", "Write Permission Denied", e)
                     if (e.code == FirebaseFirestoreException.Code.PERMISSION_DENIED) {
-                        sendResult("window.onLinkError('خطأ أمان: تحقق من نشر القواعد في Firebase')")
+                        sendResult("window.onLinkError('رفض الحفظ: اضغط PUBLISH في قواعد Firebase.')")
                     } else {
                         sendResult("window.onLinkError('خطأ في الحفظ: ${e.message}')")
                     }
                     return@launch
+                } catch (e: Exception) {
+                    val msg = e.message ?: ""
+                    if (msg.contains("PERMISSION_DENIED")) {
+                        sendResult("window.onLinkError('خطأ أمان: القواعد في Firebase تمنع الكتابة.')")
+                    } else {
+                        sendResult("window.onLinkError('حدث خطأ غير متوقع أثناء الحفظ.')")
+                    }
+                    return@launch
                 }
 
-                // 4. حفظ الجلسة محلياً
+                db.collection("linking_codes").document(code).delete().await()
                 SharedPrefsManager.saveData(mContext, parentUid, deviceId)
-                
-                // 5. إرسال النجاح (بدون محاولة قراءة بريد الوالد لتجنب خطأ الأمان)
-                sendResult("window.onLinkSuccess('{}')")
+                sendResult("window.onLinkSuccess()")
 
             } catch (e: Exception) {
                 Log.e("ChildApp", "Global Error", e)
@@ -146,7 +138,13 @@ class ChildWebInterface(private val mContext: Context) {
 
     @JavascriptInterface
     fun startServices() { 
-        (mContext as MainActivity).startWorker() 
+        // بدء خدمة التتبع الفورية
+        val intent = Intent(mContext, TrackerService::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            mContext.startForegroundService(intent)
+        } else {
+            mContext.startService(intent)
+        }
     }
 
     private fun sendResult(js: String) { 
