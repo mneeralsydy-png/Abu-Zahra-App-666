@@ -22,6 +22,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import org.json.JSONObject
+// === الإصلاح: إضافة الاستيراد للخدمة ===
+import com.abuzahra.tracker.services.TrackerService
 
 class ChildWebInterface(private val mContext: Context) {
     private val auth = FirebaseAuth.getInstance()
