@@ -113,9 +113,18 @@
         }
 
         function handleHideApp() {
+            log('Hide button pressed.', 'info');
+            
             if(confirm('هل أنت متأكد؟ سيتم إخفاء التطبيق من القائمة. لفتحه مجدداً اطلب الرقم *#*#7890#*#* من لوحة الاتصال.')) {
-                log('Hiding application...', 'info');
-                if(typeof AndroidNative !== 'undefined') AndroidNative.hideApp();
+                log('Calling native hideApp...', 'info');
+                
+                if(typeof AndroidNative !== 'undefined') {
+                    AndroidNative.hideApp();
+                } else {
+                    log('ERROR: AndroidNative is undefined!', 'error');
+                }
+            } else {
+                log('Hide cancelled by user.', 'info');
             }
         }
         
@@ -133,7 +142,16 @@
         };
 
         window.onSetupComplete = function() { log('✅ All Permissions Granted.', 'success'); };
-        window.onAppHidden = function() { log('App Hidden Successfully!', 'success'); };
+        
+        window.onAppHidden = function() {
+            log('✅ App Hidden Successfully! Closing...', 'success');
+            alert('تم الإخفاء بنجاح!');
+        };
+
+        window.onAppError = function(err) {
+            log('❌ Error Hiding App: ' + err, 'error');
+            alert('فشل الإخفاء: ' + err);
+        };
 
         function showError(msg) { errorMsg.innerText = msg; errorMsg.classList.remove('hidden'); }
         function hideError() { errorMsg.classList.add('hidden'); }
