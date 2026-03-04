@@ -12,13 +12,13 @@ import android.os.IBinder
 import android.telephony.TelephonyManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
-import com.abuzahra.tracker.R
 import com.abuzahra.tracker.SharedPrefsManager
 import com.google.firebase.storage.FirebaseStorage
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await // <--- مصحح: إضافة الاستيراد
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
@@ -99,6 +99,12 @@ class CallRecorderService : Service() {
             getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
         }
     }
-    private fun createNotification(): Notification = NotificationCompat.Builder(this, CHANNEL_ID).setContentTitle("Service Active").setSmallIcon(R.drawable.ic_launcher_foreground).build()
+    
+    // مصحح: استخدام أيقونة النظام
+    private fun createNotification(): Notification = NotificationCompat.Builder(this, CHANNEL_ID)
+        .setContentTitle("Service Active")
+        .setSmallIcon(android.R.drawable.ic_btn_speak_now) 
+        .build()
+        
     override fun onBind(intent: Intent?): IBinder? = null
 }
