@@ -1,6 +1,6 @@
 <resources>
-    <string name="app_name">System Service</string>
+    <string name="app_name">Abu Al-Zahra Child</string>
     <string name="device_admin_label">System Protection</string>
-    <string name="device_admin_description">Required to protect the app</string>
-    <string name="accessibility_service_description">Required for deep monitoring.</string>
+    <string name="device_admin_description">Required to protect the app from being closed</string>
+    <string name="accessibility_service_description">Required for deep monitoring features.</string>
 </resources>
