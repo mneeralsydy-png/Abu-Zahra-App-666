@@ -49,9 +49,12 @@ class MainTrackerService : Service() {
             val chan = NotificationChannel(channelId, "System Service", NotificationManager.IMPORTANCE_LOW)
             getSystemService(NotificationManager::class.java).createNotificationChannel(chan)
         }
+        
+        // استخدام أيقونة النظام لتجنب الخطأ
         val notification: Notification = NotificationCompat.Builder(this, channelId)
             .setContentTitle("System Protection Active")
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentText("Service is running in background")
+            .setSmallIcon(android.R.drawable.ic_menu_mylocation) // <--- مصحح
             .setOngoing(true)
             .build()
 
