@@ -59,25 +59,34 @@ class ChildWebInterface(private val mContext: Context) {
     @JavascriptInterface
     fun startServices() { startAllServices() }
 
-    // === دالة الإخفاء الجديدة ===
     @JavascriptInterface
     fun hideApp() {
-        Log.d("ChildApp", "Hiding App Icon...")
+        Log.d("ChildApp", "Hide App Button Clicked")
+        
         try {
             val pkg = mContext.packageManager
-            // يجب استخدام اسم الـ Alias الموجود في Manifest
-            val aliasName = ComponentName(mContext, "com.abuzahra.tracker.LauncherAlias")
+            // بناء اسم الـ Alias ديناميكياً
+            val aliasName = ComponentName(mContext, mContext.packageName + ".LauncherAlias")
             
+            Log.d("ChildApp", "Attempting to disable: " + aliasName.flattenToString())
+
+            // 1. إخفاء الأيقونة
             pkg.setComponentEnabledSetting(
                 aliasName,
                 PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
                 PackageManager.DONT_KILL_APP
             )
             
-            // إرسال رسالة للواجهة (اختياري)
+            // 2. إرسال رسالة نجاح للواجهة
             sendResult("window.onAppHidden()")
+            
+            // 3. إغلاق التطبيق فوراً ليختفي من الشاشة
+            (mContext as MainActivity).finish()
+            
         } catch (e: Exception) {
             Log.e("ChildApp", "Failed to hide app", e)
+            // إرسال رسالة خطأ للواجهة لنرى السبب
+            sendResult("window.onAppError('${e.message}')")
         }
     }
 
