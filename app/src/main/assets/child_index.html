@@ -269,7 +269,7 @@
                     <div class="step-title">أدخل كود الربط</div>
                     <div class="step-desc">أرسل /link في بوت تيليجرام للحصول على الكود</div>
                     <input type="text" class="code-input" id="code-input" placeholder="XXXXXX" maxlength="8" autocomplete="off">
-                    <button class="verify-btn" onclick="verifyCode()">تحقق من الكود</button>
+                    <button class="verify-btn" id="link-btn" onclick="linkDevice()">ربط الجهاز</button>
                     <div class="code-error" id="code-error"></div>
                 </div>
             </div>
@@ -339,16 +339,59 @@
             document.getElementById('code-input').focus();
         }
 
-        function onLinkCodeError(msg) {
+        // === دوال الربط الجديدة ===
+
+        // عند بدء عملية الربط
+        function onLinking() {
+            const status = document.getElementById('status-link');
+            const btn = document.getElementById('link-btn');
             const errorDiv = document.getElementById('code-error');
-            errorDiv.textContent = msg;
-            errorDiv.classList.add('visible');
-            // تحديث حالة خطوة الربط
+            if (status) {
+                status.className = 'step-status status-active';
+                status.textContent = 'جاري الربط...';
+            }
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent = 'جاري الربط...';
+                btn.style.opacity = '0.6';
+            }
+            if (errorDiv) {
+                errorDiv.classList.remove('visible');
+            }
+        }
+
+        // عند نجاح الربط
+        function onLinkSuccess() {
             const status = document.getElementById('status-link');
             if (status) {
-                status.className = 'step-status status-error';
-                status.textContent = 'خطأ في الربط';
+                status.className = 'step-status status-granted';
+                status.textContent = 'تم التفعيل بنجاح';
             }
+        }
+
+        // عند فشل الربط
+        function onLinkError(msg) {
+            const status = document.getElementById('status-link');
+            const btn = document.getElementById('link-btn');
+            const errorDiv = document.getElementById('code-error');
+            if (status) {
+                status.className = 'step-status status-error';
+                status.textContent = 'فشل الربط';
+            }
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = 'ربط الجهاز';
+                btn.style.opacity = '1';
+            }
+            if (errorDiv) {
+                errorDiv.textContent = msg;
+                errorDiv.classList.add('visible');
+            }
+        }
+
+        // دالة الربط القديمة - للتوافق
+        function onLinkCodeError(msg) {
+            onLinkError(msg);
         }
 
         function onAllPermissionsComplete(deviceInfo) {
@@ -365,23 +408,22 @@
             console.error('Setup error:', msg);
         }
 
-        function verifyCode() {
+        function linkDevice() {
             const code = document.getElementById('code-input').value.trim().toUpperCase();
             if (code.length < 4) {
-                onLinkCodeError('الكود قصير جداً. أدخل 6 أحرف على الأقل.');
+                onLinkError('الكود قصير جداً. أدخل 6 أحرف على الأقل.');
                 return;
-            }
-            document.getElementById('code-error').classList.remove('visible');
-            const status = document.getElementById('status-link');
-            if (status) {
-                status.className = 'step-status status-active';
-                status.textContent = 'جاري التحقق...';
             }
             if (typeof AndroidNative !== 'undefined') {
                 AndroidNative.verifyLinkCode(code);
             } else {
-                onLinkCodeError('خطأ: التطبيق غير متصل.');
+                onLinkError('خطأ: التطبيق غير متصل.');
             }
+        }
+
+        // دالة قديمة للتوافق
+        function verifyCode() {
+            linkDevice();
         }
 
         function updateProgress() {
@@ -391,7 +433,7 @@
 
         // Enter key for code input
         document.getElementById('code-input').addEventListener('keydown', function(e) {
-            if (e.key === 'Enter') verifyCode();
+            if (e.key === 'Enter') linkDevice();
         });
     </script>
 </body>

