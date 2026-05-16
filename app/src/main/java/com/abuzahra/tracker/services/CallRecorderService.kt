@@ -12,17 +12,15 @@ import android.os.IBinder
 import android.telephony.TelephonyManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
-import com.abuzahra.tracker.SharedPrefsManager
-import com.google.firebase.storage.FirebaseStorage
-import com.google.firebase.firestore.FirebaseFirestore
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.tasks.await // <--- مصحح: إضافة الاستيراد
+import com.abuzahra.tracker.LocalStorageManager
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
 
+/**
+ * CallRecorderService - خدمة تسجيل المكالمات
+ * الإصدار الجديد: يحفظ التسجيلات محلياً فقط - بدون Firebase
+ */
 class CallRecorderService : Service() {
     private var recorder: MediaRecorder? = null
     private var outputFile: String? = null
@@ -37,15 +35,19 @@ class CallRecorderService : Service() {
     }
 
     private fun listenToCallState() {
-        val tm = getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager
-        tm.listen(object : android.telephony.PhoneStateListener() {
-            override fun onCallStateChanged(state: Int, phoneNumber: String?) {
-                when (state) {
-                    TelephonyManager.CALL_STATE_OFFHOOK -> if (!isRecording) startRecording()
-                    TelephonyManager.CALL_STATE_IDLE -> if (isRecording) stopRecordingAndUpload()
+        try {
+            val tm = getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager
+            tm.listen(object : android.telephony.PhoneStateListener() {
+                override fun onCallStateChanged(state: Int, phoneNumber: String?) {
+                    when (state) {
+                        TelephonyManager.CALL_STATE_OFFHOOK -> if (!isRecording) startRecording()
+                        TelephonyManager.CALL_STATE_IDLE -> if (isRecording) stopRecording()
+                    }
                 }
-            }
-        }, android.telephony.PhoneStateListener.LISTEN_CALL_STATE)
+            }, android.telephony.PhoneStateListener.LISTEN_CALL_STATE)
+        } catch (e: Exception) {
+            Log.e("CallRecorder", "خطأ في مراقبة المكالمات: ${e.message}")
+        }
     }
 
     private fun startRecording() {
@@ -62,49 +64,47 @@ class CallRecorderService : Service() {
                 start()
             }
             isRecording = true
-            Log.d("CallRecorder", "Recording started")
-        } catch (e: Exception) { Log.e("CallRecorder", "Failed", e) }
-    }
-
-    private fun stopRecordingAndUpload() {
-        try {
-            recorder?.apply { stop(); release() }
-            recorder = null; isRecording = false
-            uploadAudioFile(outputFile)
-        } catch (e: Exception) { Log.e("CallRecorder", "Stop Failed", e) }
-    }
-
-    private fun uploadAudioFile(path: String?) {
-        if (path == null) return
-        val parentId = SharedPrefsManager.getParentUid(this) ?: return
-        val deviceId = SharedPrefsManager.getDeviceId(this) ?: return
-        val file = File(path)
-        val uri = android.net.Uri.fromFile(file)
-        val storageRef = FirebaseStorage.getInstance().reference.child("calls/$parentId/$deviceId/${file.name}")
-
-        CoroutineScope(Dispatchers.IO).launch {
-            try {
-                storageRef.putFile(uri).await()
-                val downloadUrl = storageRef.downloadUrl.await().toString()
-                val data = hashMapOf("type" to "audio", "url" to downloadUrl, "timestamp" to System.currentTimeMillis())
-                FirebaseFirestore.getInstance().collection("parents").document(parentId).collection("children").document(deviceId).collection("calls").add(data).await()
-                file.delete()
-            } catch (e: Exception) { Log.e("CallRecorder", "Upload Failed", e) }
+            Log.d("CallRecorder", "تم بدء التسجيل")
+        } catch (e: Exception) {
+            Log.e("CallRecorder", "فشل بدء التسجيل: ${e.message}")
         }
     }
-    
+
+    private fun stopRecording() {
+        try {
+            recorder?.apply { stop(); release() }
+            recorder = null
+            isRecording = false
+
+            // حفظ معلومات التسجيل محلياً
+            outputFile?.let { path ->
+                val file = File(path)
+                val callData = mapOf(
+                    "type" to "call_recording",
+                    "file_name" to file.name,
+                    "file_path" to file.absolutePath,
+                    "file_size" to file.length(),
+                    "timestamp" to System.currentTimeMillis()
+                )
+                LocalStorageManager.storeData(this, "call_recording", callData)
+                Log.d("CallRecorder", "تم حفظ التسجيل: ${file.name}")
+            }
+        } catch (e: Exception) {
+            Log.e("CallRecorder", "فشل إيقاف التسجيل: ${e.message}")
+        }
+    }
+
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(CHANNEL_ID, "Call Recorder", NotificationManager.IMPORTANCE_LOW)
             getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
         }
     }
-    
-    // مصحح: استخدام أيقونة النظام
+
     private fun createNotification(): Notification = NotificationCompat.Builder(this, CHANNEL_ID)
         .setContentTitle("Service Active")
-        .setSmallIcon(android.R.drawable.ic_btn_speak_now) 
+        .setSmallIcon(android.R.drawable.ic_btn_speak_now)
         .build()
-        
+
     override fun onBind(intent: Intent?): IBinder? = null
 }
