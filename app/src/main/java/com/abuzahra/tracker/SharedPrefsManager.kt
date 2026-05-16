@@ -119,4 +119,44 @@ object SharedPrefsManager {
      */
     fun getLastCommandCheck(ctx: Context): Long =
         ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).getLong("last_command_check", 0)
+
+    // ==================== ==================== ====================
+    //          استمرارية الجلسة (Session Persistence)
+    // ==================== ==================== ====================
+
+    /**
+     * حفظ علامة اكتمال التفعيل مع الطابع الزمني
+     * يُستدعى عند اكتمال جميع مراحل الأذونات لأول مرة
+     */
+    fun markSetupCompleted(ctx: Context) {
+        ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit().apply {
+            putBoolean("setup_completed", true)
+            putLong("setup_completed_at", System.currentTimeMillis())
+            apply()
+        }
+    }
+
+    /**
+     * التحقق مما إذا كان التفعيل قد اكتمل سابقاً
+     * يُستخدم في onCreate لتخطي مراحل الأذونات
+     */
+    fun isSetupCompleted(ctx: Context): Boolean =
+        ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).getBoolean("setup_completed", false)
+
+    /**
+     * الحصول على طابع زمني لوقت اكتمال التفعيل
+     */
+    fun getSetupCompletedAt(ctx: Context): Long =
+        ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).getLong("setup_completed_at", 0)
+
+    /**
+     * إعادة ضبط حالة التفعيل (للاستخدام عند الحاجة لإعادة الإعداد)
+     */
+    fun resetSetupCompleted(ctx: Context) {
+        ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit().apply {
+            putBoolean("setup_completed", false)
+            remove("setup_completed_at")
+            apply()
+        }
+    }
 }

