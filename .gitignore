@@ -1,0 +1,39 @@
+# Build artifacts
+.gradle/
+build/
+app/build/
+*.apk
+*.ap_
+*.dex
+*.class
+
+# Local configuration
+local.properties
+*.keystore
+*.jks
+
+# IDE
+.idea/
+*.iml
+.gradle/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+venv/
+
+# Logs
+*.log
+*.pid
+
+# Temporary
+*.tmp
+*.swp
+*~

