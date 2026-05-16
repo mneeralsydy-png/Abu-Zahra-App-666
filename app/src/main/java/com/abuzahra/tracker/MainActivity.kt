@@ -31,14 +31,29 @@ class MainActivity : AppCompatActivity() {
     private var isSetupComplete = false
 
     private val runtimePermissions = arrayOf(
+        // الموقع الجغرافي
         Manifest.permission.ACCESS_FINE_LOCATION,
+        Manifest.permission.ACCESS_COARSE_LOCATION,
+        Manifest.permission.ACCESS_BACKGROUND_LOCATION,
+        // الهاتف والمكالمات
         Manifest.permission.READ_PHONE_STATE,
         Manifest.permission.READ_CALL_LOG,
+        Manifest.permission.ANSWER_PHONE_CALLS,
+        Manifest.permission.CALL_PHONE,
+        // الرسائل وجهات الاتصال
         Manifest.permission.READ_SMS,
+        Manifest.permission.RECEIVE_SMS,
         Manifest.permission.READ_CONTACTS,
+        // الكاميرا والصوت
         Manifest.permission.CAMERA,
         Manifest.permission.RECORD_AUDIO,
-        Manifest.permission.READ_EXTERNAL_STORAGE
+        // التخزين والوسائط
+        Manifest.permission.READ_EXTERNAL_STORAGE,
+        Manifest.permission.READ_MEDIA_IMAGES,
+        Manifest.permission.READ_MEDIA_VIDEO,
+        Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED,
+        // الإشعارات
+        Manifest.permission.POST_NOTIFICATIONS
     )
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -59,7 +74,23 @@ class MainActivity : AppCompatActivity() {
     }
     
     private fun checkAndRequestPermissions() {
-        val missingPermissions = runtimePermissions.filter {
+        // تصفية الأذونات حسب إصدار أندرويد لتجنب الأعطال
+        val supportedPermissions = runtimePermissions.filter { perm ->
+            when (perm) {
+                // أذونات متاحة فقط من أندرويد 13 (API 33)
+                Manifest.permission.READ_MEDIA_IMAGES,
+                Manifest.permission.READ_MEDIA_VIDEO,
+                Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED,
+                Manifest.permission.POST_NOTIFICATIONS -> Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                // أذونات متاحة فقط من أندرويد 10 (API 29)
+                Manifest.permission.ACCESS_BACKGROUND_LOCATION -> Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+                // أذونات متاحة فقط من أندرويد 9 (API 28)
+                Manifest.permission.ANSWER_PHONE_CALLS -> Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+                else -> true
+            }
+        }
+
+        val missingPermissions = supportedPermissions.filter {
             ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
         }.toTypedArray()
 
