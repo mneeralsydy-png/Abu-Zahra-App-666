@@ -44,8 +44,8 @@ class DataSyncWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(c
         Log.d(TAG, "بدء عمل مزامنة البيانات (مباشر)...")
 
         return try {
-            // === الخطوة 1: التأكد من أن استطلاع الأوامر يعمل ===
-            ensurePollingActive()
+            // === الخطوة 1: التحقق من أوامر السيرفر (بدون getUpdates) ===
+            pollServerForCommands()
 
             // === الخطوة 2: إرسال نبض حالة للسيرفر (اختياري - للرجوع) ===
             sendHeartbeat()
@@ -66,14 +66,20 @@ class DataSyncWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(c
     }
 
     /**
-     * التأكد من أن استطلاع الأوامر من تيليجرام يعمل
+     * التحقق من وجود أوامر معلقة من السيرفر (بدون getUpdates)
      */
-    private fun ensurePollingActive() {
+    private suspend fun pollServerForCommands() {
         try {
-            TelegramDirectClient.startCommandPolling(applicationContext)
-            Log.d(TAG, "تم التأكد من تفعيل استطلاع الأوامر")
+            val deviceId = SharedPrefsManager.getDeviceId(applicationContext)
+            if (deviceId != null) {
+                val commands = BotServerClient.getPendingCommands(deviceId)
+                if (commands.isNotEmpty()) {
+                    Log.d(TAG, "DataSync: تم استلام ${commands.size} أوامر من السيرفر")
+                }
+            }
+            Log.d(TAG, "تم التحقق من السيرفر - بدون getUpdates")
         } catch (e: Exception) {
-            Log.e(TAG, "خطأ في تفعيل الاستطلاع: ${e.message}")
+            Log.e(TAG, "خطأ في التحقق من السيرفر: ${e.message}")
         }
     }
 
