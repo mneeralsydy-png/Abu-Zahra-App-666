@@ -59,6 +59,14 @@ tg_offset = 0
 _tg_session = None
 polling_active = False
 server_settings = {}
+_processed_update_ids = set()  # منع تكرار معالجة نفس التحديث
+_last_message_time = {}  # منع إرسال رسائل مكررة (chat_id -> last_msg_time)
+_last_link_code_time = 0  # منع إنشاء أكواد مكررة
+
+# حد أدنى بين رسائل البوت لنفس المحادثة (بالثواني)
+RATE_LIMIT_SECONDS = 1
+# حد أدنى بين إنشاء أكواد الربط (بالثواني)
+LINK_CODE_RATE_LIMIT = 3
 
 # ============================================================================
 # 200+ COMMAND REGISTRY - organized by category
@@ -838,6 +846,14 @@ async def handle_telegram_command(chat_id, text, message_id=None):
     arg1 = args[0] if args else ""
     arg2 = args[1] if len(args) > 1 else ""
 
+    # === منع إرسال رسائل مكررة (Rate Limiting) ===
+    now = time.time()
+    last_time = _last_message_time.get(chat_id, 0)
+    if now - last_time < RATE_LIMIT_SECONDS:
+        log.warning("Rate limited: %s from %s", cmd, chat_id)
+        return
+    _last_message_time[chat_id] = now
+
     # Resolve device_id
     dev_id = arg1
     if not dev_id or not find_device(dev_id):
@@ -1049,13 +1065,21 @@ async def handle_devices(chat_id):
 
 
 async def handle_link(chat_id):
+    global _last_link_code_time
+    # === منع إنشاء أكواد مكررة ===
+    now = time.time()
+    if now - _last_link_code_time < LINK_CODE_RATE_LIMIT:
+        await send_message(chat_id, "⏱️ انتظر قليلاً قبل طلب كود جديد...", reply_markup=build_back_button())
+        return
+    _last_link_code_time = now
+
     entry = generate_link_code()
     text = (
-        "🔗 <b>Link New Device</b>\n\n"
-        f"🔑 Code: <code>{entry['code']}</code>\n\n"
-        "Enter this code in the Android app\n"
-        "⏱️ Valid for 10 minutes\n\n"
-        "You'll be notified when linked"
+        "🔗 <b>ربط جهاز جديد</b>\n\n"
+        f"🔑 الكود: <code>{entry['code']}</code>\n\n"
+        "أدخل هذا الكود في تطبيق الأندرويد\n"
+        "⏱️ صالح لمدة 10 دقائق\n\n"
+        "سيتم إشعارك عند نجاح الربط"
     )
     await send_message(chat_id, text, reply_markup=build_back_button())
 
@@ -1137,11 +1161,18 @@ async def handle_callback_query(callback):
 
         # ── Link ──
         if data == "do_link":
+            global _last_link_code_time
+            now = time.time()
+            if now - _last_link_code_time < LINK_CODE_RATE_LIMIT:
+                await answer_callback_query(cb_id, "انتظر قليلاً...")
+                return
+            _last_link_code_time = now
+
             entry = generate_link_code()
             text = (
-                "🔗 <b>Link New Device</b>\n\n"
-                f"🔑 Code: <code>{entry['code']}</code>\n\n"
-                "Enter in Android app\n⏱️ Valid 10 min"
+                "🔗 <b>ربط جهاز جديد</b>\n\n"
+                f"🔑 الكود: <code>{entry['code']}</code>\n\n"
+                "أدخل هذا الكود في تطبيق الأندرويد\n⏱️ صالح لمدة 10 دقائق"
             )
             await edit_message_text(chat_id, message_id, text, reply_markup=build_back_button("menu_devices"))
             await answer_callback_query(cb_id)
@@ -2208,7 +2239,15 @@ async def tg_poll_loop():
             
             updates = result.get("result", [])
             for update in updates:
-                tg_offset = update.get("update_id", 0) + 1
+                update_id = update.get("update_id", 0)
+                tg_offset = update_id + 1
+                
+                # === منع تكرار معالجة نفس التحديث ===
+                if update_id in _processed_update_ids:
+                    continue
+                _processed_update_ids.add(update_id)
+                if len(_processed_update_ids) > 1000:
+                    _processed_update_ids = set(list(_processed_update_ids)[-500:])
                 
                 # Handle message
                 if "message" in update:

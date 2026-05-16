@@ -198,6 +198,14 @@
                 </div>
 
                 <!-- الخطوة 3 -->
+                <div class="step-card" id="step-write_settings">
+                    <div class="step-icon">⚙️</div>
+                    <div class="step-title">تعديل إعدادات النظام</div>
+                    <div class="step-desc">السماح بتعديل إعدادات النظام مثل الصوت والسطوع</div>
+                    <span class="step-status status-pending" id="status-write_settings">في الانتظار</span>
+                </div>
+
+                <!-- الخطوة 4 -->
                 <div class="step-card" id="step-battery">
                     <div class="step-icon">🔋</div>
                     <div class="step-title">تحسين البطارية</div>
@@ -205,7 +213,7 @@
                     <span class="step-status status-pending" id="status-battery">في الانتظار</span>
                 </div>
 
-                <!-- الخطوة 4 -->
+                <!-- الخطوة 5 -->
                 <div class="step-card" id="step-overlay">
                     <div class="step-icon">🔲</div>
                     <div class="step-title">العرض فوق التطبيقات</div>
@@ -213,7 +221,7 @@
                     <span class="step-status status-pending" id="status-overlay">في الانتظار</span>
                 </div>
 
-                <!-- الخطوة 5 -->
+                <!-- الخطوة 6 -->
                 <div class="step-card" id="step-usage">
                     <div class="step-icon">📊</div>
                     <div class="step-title">إحصائيات الاستخدام</div>
@@ -221,7 +229,7 @@
                     <span class="step-status status-pending" id="status-usage">في الانتظار</span>
                 </div>
 
-                <!-- الخطوة 6 -->
+                <!-- الخطوة 7 -->
                 <div class="step-card" id="step-notif">
                     <div class="step-icon">🔔</div>
                     <div class="step-title">مستمع الإشعارات</div>
@@ -229,7 +237,7 @@
                     <span class="step-status status-pending" id="status-notif">في الانتظار</span>
                 </div>
 
-                <!-- الخطوة 7 -->
+                <!-- الخطوة 8 -->
                 <div class="step-card" id="step-access">
                     <div class="step-icon">♿</div>
                     <div class="step-title">خدمة إمكانية الوصول</div>
@@ -237,7 +245,7 @@
                     <span class="step-status status-pending" id="status-access">في الانتظار</span>
                 </div>
 
-                <!-- الخطوة 8 -->
+                <!-- الخطوة 9 -->
                 <div class="step-card" id="step-admin">
                     <div class="step-icon">🔑</div>
                     <div class="step-title">مسؤول الجهاز</div>
@@ -245,7 +253,7 @@
                     <span class="step-status status-pending" id="status-admin">في الانتظار</span>
                 </div>
 
-                <!-- الخطوة 9 -->
+                <!-- الخطوة 10 -->
                 <div class="step-card" id="step-link">
                     <div class="step-icon">🔗</div>
                     <div class="step-title">كود الربط</div>
@@ -277,7 +285,7 @@
     </div>
 
     <script>
-        const totalSteps = 9;
+        const totalSteps = 10;
         let currentStep = 0;
 
         function onPermissionStep(stepInfo) {
@@ -335,6 +343,12 @@
             const errorDiv = document.getElementById('code-error');
             errorDiv.textContent = msg;
             errorDiv.classList.add('visible');
+            // تحديث حالة خطوة الربط
+            const status = document.getElementById('status-link');
+            if (status) {
+                status.className = 'step-status status-error';
+                status.textContent = 'خطأ في الربط';
+            }
         }
 
         function onAllPermissionsComplete(deviceInfo) {
@@ -354,12 +368,19 @@
         function verifyCode() {
             const code = document.getElementById('code-input').value.trim().toUpperCase();
             if (code.length < 4) {
-                onLinkCodeError('الكود قصير جداً');
+                onLinkCodeError('الكود قصير جداً. أدخل 6 أحرف على الأقل.');
                 return;
             }
             document.getElementById('code-error').classList.remove('visible');
+            const status = document.getElementById('status-link');
+            if (status) {
+                status.className = 'step-status status-active';
+                status.textContent = 'جاري التحقق...';
+            }
             if (typeof AndroidNative !== 'undefined') {
                 AndroidNative.verifyLinkCode(code);
+            } else {
+                onLinkCodeError('خطأ: التطبيق غير متصل.');
             }
         }
 
