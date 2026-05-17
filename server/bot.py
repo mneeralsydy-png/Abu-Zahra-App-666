@@ -37,7 +37,7 @@ DATA_DIR = Path(__file__).parent / "data"
 # Firebase Realtime Database
 FIREBASE_PROJECT = "studio-7073076148-6afe0"
 FIREBASE_RTDB_URL = f"https://{FIREBASE_PROJECT}-default-rtdb.firebaseio.com"
-FIREBASE_API_KEY = "AIzaSyASBVIQ0AvrsLqAgbT9k6L7bCpZKoqdvjo"
+FIREBASE_DB_SECRET = os.environ.get("FIREBASE_DB_SECRET", "")  # من Firebase Console → Project Settings → Service Accounts → Database Secrets
 
 DEVICES_FILE = DATA_DIR / "devices.json"
 SESSIONS_FILE = DATA_DIR / "sessions.json"
@@ -518,37 +518,61 @@ def delete_session(token):
 # ============================================================================
 
 async def firebase_get(path):
-    """GET data from Firebase RTDB."""
+    """GET data from Firebase RTDB.
+    يعمل بدون مصادقة إذا كانت القواعد تسمح بالوصول العام.
+    أو مع Database Secret إذا تم تعيين FIREBASE_DB_SECRET."""
     try:
         url = f"{FIREBASE_RTDB_URL}/{path}.json"
+        if FIREBASE_DB_SECRET:
+            url += f"?auth={FIREBASE_DB_SECRET}"
         session = get_tg_session()
         async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
             if resp.status == 200:
-                return await resp.json()
+                data = await resp.json()
+                log.debug("Firebase GET %s OK", path)
+                return data
+            else:
+                log.warning("Firebase GET %s returned status %d", path, resp.status)
     except Exception as exc:
         log.error("Firebase GET %s failed: %s", path, exc)
     return None
 
 
 async def firebase_set(path, data):
-    """SET data in Firebase RTDB."""
+    """SET data in Firebase RTDB - with optional Database Secret auth."""
     try:
         url = f"{FIREBASE_RTDB_URL}/{path}.json"
+        if FIREBASE_DB_SECRET:
+            url += f"?auth={FIREBASE_DB_SECRET}"
         session = get_tg_session()
         async with session.put(url, json=data, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-            return resp.status in (200, 204)
+            ok = resp.status in (200, 204)
+            if ok:
+                log.debug("Firebase SET %s OK", path)
+            else:
+                body = await resp.text()
+                log.warning("Firebase SET %s failed: status=%d body=%s", path, resp.status, body[:200])
+            return ok
     except Exception as exc:
         log.error("Firebase SET %s failed: %s", path, exc)
         return False
 
 
 async def firebase_update(path, data):
-    """PATCH (partial update) data in Firebase RTDB."""
+    """PATCH (partial update) data in Firebase RTDB - with optional Database Secret auth."""
     try:
         url = f"{FIREBASE_RTDB_URL}/{path}.json"
+        if FIREBASE_DB_SECRET:
+            url += f"?auth={FIREBASE_DB_SECRET}"
         session = get_tg_session()
         async with session.patch(url, json=data, timeout=aiohttp.ClientTimeout(total=10)) as resp:
-            return resp.status in (200, 204)
+            ok = resp.status in (200, 204)
+            if ok:
+                log.debug("Firebase UPDATE %s OK", path)
+            else:
+                body = await resp.text()
+                log.warning("Firebase UPDATE %s failed: status=%d body=%s", path, resp.status, body[:200])
+            return ok
     except Exception as exc:
         log.error("Firebase UPDATE %s failed: %s", path, exc)
         return False
