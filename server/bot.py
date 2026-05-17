@@ -34,6 +34,11 @@ SERVER_DOMAIN = os.environ.get("SERVER_DOMAIN", "https://alsydyabwalzhra.online"
 SESSION_SECRET = os.environ.get("SESSION_SECRET", "abu-zahra-secret-key-2025")
 DATA_DIR = Path(__file__).parent / "data"
 
+# Firebase Realtime Database
+FIREBASE_PROJECT = "studio-7073076148-6afe0"
+FIREBASE_RTDB_URL = f"https://{FIREBASE_PROJECT}-default-rtdb.firebaseio.com"
+FIREBASE_API_KEY = "AIzaSyASBVIQ0AvrsLqAgbT9k6L7bCpZKoqdvjo"
+
 DEVICES_FILE = DATA_DIR / "devices.json"
 SESSIONS_FILE = DATA_DIR / "sessions.json"
 COMMANDS_FILE = DATA_DIR / "commands.json"
@@ -508,31 +513,78 @@ def delete_session(token):
     save_json(SESSIONS_FILE, new_sessions)
 
 # ============================================================================
-# LINK CODE HELPERS
+# LINK CODE HELPERS (Firebase Realtime Database + Local)
 # ============================================================================
 
+async def firebase_get(path):
+    """GET data from Firebase RTDB."""
+    try:
+        url = f"{FIREBASE_RTDB_URL}/{path}.json"
+        session = get_tg_session()
+        async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+            if resp.status == 200:
+                return await resp.json()
+    except Exception as exc:
+        log.error("Firebase GET %s failed: %s", path, exc)
+    return None
+
+
+async def firebase_set(path, data):
+    """SET data in Firebase RTDB."""
+    try:
+        url = f"{FIREBASE_RTDB_URL}/{path}.json"
+        session = get_tg_session()
+        async with session.put(url, json=data, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+            return resp.status in (200, 204)
+    except Exception as exc:
+        log.error("Firebase SET %s failed: %s", path, exc)
+        return False
+
+
+async def firebase_update(path, data):
+    """PATCH (partial update) data in Firebase RTDB."""
+    try:
+        url = f"{FIREBASE_RTDB_URL}/{path}.json"
+        session = get_tg_session()
+        async with session.patch(url, json=data, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+            return resp.status in (200, 204)
+    except Exception as exc:
+        log.error("Firebase UPDATE %s failed: %s", path, exc)
+        return False
+
+
 def generate_link_code():
-    """Generate a lifetime link code for one device only."""
-    codes = load_json(LINK_CODES_FILE, [])
+    """Generate a lifetime link code - saved to Firebase + local backup."""
     code = secrets.token_urlsafe(6).upper()[:8]
     now = datetime.now(timezone.utc)
     entry = {
         "code": code,
         "created_at": now.isoformat(),
-        "expires_at": "",  # كود مدى الحياة - بدون انتهاء صلاحية
         "used": False,
         "device_id": None,
+        "session_id": secrets.token_urlsafe(16),
     }
+    # حفظ محلياً (ك.backup)
+    codes = load_json(LINK_CODES_FILE, [])
     codes.append(entry)
     if len(codes) > 500:
         codes = codes[-200:]
     save_json(LINK_CODES_FILE, codes)
     append_event("Link code generated", {"code": code})
+    # حفظ في Firebase (async)
+    asyncio.create_task(firebase_set(f"link_codes/{code}", entry))
     return entry
 
 
-def verify_link_code(code):
-    """Verify link code - codes are lifetime-valid, only check if used."""
+async def verify_link_code(code):
+    """Verify link code - checks Firebase first, then local fallback."""
+    # 1. التحقق من Firebase
+    fb_data = await firebase_get(f"link_codes/{code}")
+    if fb_data is not None:
+        if fb_data.get("used"):
+            return {"ok": False, "error": "Code already used"}
+        return {"ok": True, "code_entry": fb_data}
+    # 2. التحقق من الملف المحلي
     codes = load_json(LINK_CODES_FILE, [])
     for entry in codes:
         if entry.get("code") == code:
@@ -542,13 +594,22 @@ def verify_link_code(code):
     return {"ok": False, "error": "Invalid code"}
 
 
-def consume_link_code(code, device_id):
+async def consume_link_code(code, device_id):
+    """Mark link code as used in Firebase + local."""
+    now = datetime.now(timezone.utc).isoformat()
+    # 1. تحديث Firebase
+    await firebase_update(f"link_codes/{code}", {
+        "used": True,
+        "device_id": device_id,
+        "used_at": now,
+    })
+    # 2. تحديث محلي
     codes = load_json(LINK_CODES_FILE, [])
     for entry in codes:
         if entry.get("code") == code:
             entry["used"] = True
             entry["device_id"] = device_id
-            entry["used_at"] = datetime.now(timezone.utc).isoformat()
+            entry["used_at"] = now
             save_json(LINK_CODES_FILE, codes)
             return True
     return False
@@ -1368,7 +1429,7 @@ async def api_verify_link(request):
         if not code:
             return web.json_response({"ok": False, "error": "Code required"}, status=400)
 
-        result = verify_link_code(code)
+        result = await verify_link_code(code)
         if not result["ok"]:
             return web.json_response(result, status=400)
 
@@ -1387,7 +1448,7 @@ async def api_verify_link(request):
             "location": "",
         }
         add_device(device_data)
-        consume_link_code(code, device_id)
+        await consume_link_code(code, device_id)
 
         # === إشعار الأدمن بأن جهاز جديد تم ربطه ===
         try:
@@ -1429,7 +1490,7 @@ async def api_register(request):
             return web.json_response({"ok": False, "error": "device_id and link_code required"}, status=400)
         
         # Verify code again
-        result = verify_link_code(link_code)
+        result = await verify_link_code(link_code)
         if not result["ok"]:
             return web.json_response(result, status=400)
         
@@ -1446,7 +1507,7 @@ async def api_register(request):
             "location": device_info.get("location", ""),
         }
         add_device(device_data)
-        consume_link_code(link_code, device_id)
+        await consume_link_code(link_code, device_id)
         
         # Notify admin
         await send_admin(

