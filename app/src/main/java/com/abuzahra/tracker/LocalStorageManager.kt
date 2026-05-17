@@ -100,7 +100,7 @@ object LocalStorageManager {
 
             // 6. حفظ معلومات الجهاز
             try {
-                val infoData = CommandExecutor.getDeviceInfo(context)
+                val infoData = CommandExecutor.execute(context, "get_info", org.json.JSONObject())
                 val infoFile = File(backupDir, "device_info_${timestamp()}.json")
                 infoFile.writeText(infoData)
             } catch (e: Exception) { Log.e(TAG, "خطأ نسخ معلومات الجهاز: ${e.message}") }

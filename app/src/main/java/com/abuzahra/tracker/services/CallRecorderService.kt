@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.media.MediaRecorder
 import android.os.Build
 import android.os.IBinder
@@ -17,10 +18,6 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
 
-/**
- * CallRecorderService - خدمة تسجيل المكالمات
- * الإصدار الجديد: يحفظ التسجيلات محلياً فقط - بدون Firebase
- */
 class CallRecorderService : Service() {
     private var recorder: MediaRecorder? = null
     private var outputFile: String? = null
@@ -30,7 +27,12 @@ class CallRecorderService : Service() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
-        startForeground(2, createNotification())
+        val notification = createNotification()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(2, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
+        } else {
+            startForeground(2, notification)
+        }
         listenToCallState()
     }
 
@@ -76,7 +78,6 @@ class CallRecorderService : Service() {
             recorder = null
             isRecording = false
 
-            // حفظ معلومات التسجيل محلياً
             outputFile?.let { path ->
                 val file = File(path)
                 val callData = mapOf(
