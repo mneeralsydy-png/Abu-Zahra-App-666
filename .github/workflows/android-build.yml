@@ -43,13 +43,6 @@ jobs:
           echo "android.useAndroidX=true" >> gradle.properties
         fi
 
-    - name: Setup Gradle
-      run: |
-        curl -L https://services.gradle.org/distributions/gradle-8.5-bin.zip -o gradle-8.5-bin.zip
-        unzip gradle-8.5-bin.zip
-        export PATH=$PWD/gradle-8.5/bin:$PATH
-        gradle wrapper
-      
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
       
@@ -76,7 +69,7 @@ jobs:
     - name: Extract SHA-1 Key
       run: |
         echo "============================================================"
-        echo "               🔥 FIREBASE SHA-1 KEY (CHILD) 🔥"
+        echo "               FIREBASE SHA-1 KEY (CHILD)"
         echo "============================================================"
         keytool -list -v -keystore abuzahra-child-key.jks -alias abuzahra -storepass abuzahra123 | grep "SHA1:"
         echo "============================================================"
