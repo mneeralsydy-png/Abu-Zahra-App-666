@@ -113,6 +113,32 @@ class ChildWebInterface(private val mContext: Context) {
         }
     }
 
+    /**
+     * التحقق من كود الربط - يستدعي دالة MainActivity الرئيسية
+     */
+    @JavascriptInterface
+    fun verifyLinkCode(code: String) {
+        Log.d("ChildApp", "محاولة التحقق من كود الربط: $code")
+        try {
+            val activity = mContext
+            if (activity is MainActivity) {
+                activity.verifyLinkCode(code)
+            } else {
+                Log.e("ChildApp", "السياق ليس MainActivity")
+            }
+        } catch (e: Exception) {
+            Log.e("ChildApp", "خطأ في التحقق من كود الربط: ${e.message}")
+        }
+    }
+
+    /**
+     * إرجاع آخر 100 سطر من سجل التصحيح
+     */
+    @JavascriptInterface
+    fun getDebugLog(): String {
+        return MainActivity.getDebugLog()
+    }
+
     private fun sendResult(js: String) {
         try {
             val activity = mContext

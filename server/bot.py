@@ -65,6 +65,7 @@ _tg_session = None
 polling_active = False
 server_settings = {}
 _processed_update_ids = set()  # منع تكرار معالجة نفس التحديث
+_processed_message_keys = set()  # منع تكرار معالجة نفس الرسالة (chat_id:message_id)
 _last_message_time = {}  # منع إرسال رسائل مكررة (chat_id -> last_msg_time)
 _last_link_code_time = 0  # منع إنشاء أكواد مكررة
 
@@ -553,8 +554,9 @@ async def firebase_update(path, data):
         return False
 
 
-def generate_link_code():
-    """Generate a lifetime link code - saved to Firebase + local backup."""
+async def generate_link_code():
+    """Generate a lifetime link code - saved to Firebase + local backup.
+    كود مدى الحياة - لربط جهاز واحد فقط - متزامن مع Firebase."""
     code = secrets.token_urlsafe(6).upper()[:8]
     now = datetime.now(timezone.utc)
     entry = {
@@ -564,15 +566,19 @@ def generate_link_code():
         "device_id": None,
         "session_id": secrets.token_urlsafe(16),
     }
-    # حفظ محلياً (ك.backup)
+    # 1. حفظ محلياً (ك.backup)
     codes = load_json(LINK_CODES_FILE, [])
     codes.append(entry)
     if len(codes) > 500:
         codes = codes[-200:]
     save_json(LINK_CODES_FILE, codes)
     append_event("Link code generated", {"code": code})
-    # حفظ في Firebase (async)
-    asyncio.create_task(firebase_set(f"link_codes/{code}", entry))
+    # 2. حفظ في Firebase (انتظار التأكيد)
+    fb_ok = await firebase_set(f"link_codes/{code}", entry)
+    if fb_ok:
+        log.info("تم حفظ كود الربط %s في Firebase", code)
+    else:
+        log.warning("لم يتم حفظ كود الربط %s في Firebase - محفوظ محلياً فقط", code)
     return entry
 
 
@@ -1131,7 +1137,7 @@ async def handle_link(chat_id):
         return
     _last_link_code_time = now
 
-    entry = generate_link_code()
+    entry = await generate_link_code()
     text = (
         "🔗 <b>ربط جهاز جديد</b>\n\n"
         f"🔑 الكود: <code>{entry['code']}</code>\n\n"
@@ -1226,7 +1232,7 @@ async def handle_callback_query(callback):
                 return
             _last_link_code_time = now
 
-            entry = generate_link_code()
+            entry = await generate_link_code()
             text = (
                 "🔗 <b>ربط جهاز جديد</b>\n\n"
                 f"🔑 الكود: <code>{entry['code']}</code>\n\n"
@@ -1807,8 +1813,8 @@ async def api_web_send_command(request):
 
 @require_auth
 async def api_web_link_code(request):
-    entry = generate_link_code()
-    return web.json_response({"ok": True, "code": entry["code"], "expires_at": entry["expires_at"]})
+    entry = await generate_link_code()
+    return web.json_response({"ok": True, "code": entry["code"], "session_id": entry.get("session_id", "")})
 
 
 @require_auth
@@ -2347,19 +2353,35 @@ async def tg_poll_loop():
                     msg = update["message"]
                     chat_id = msg.get("chat", {}).get("id")
                     text = msg.get("text", "")
-                    from_user = msg.get("from", {}).get("id")
+                    msg_id = msg.get("message_id", 0)
+                    
+                    # === منع تكرار معالجة نفس الرسالة بالضبط ===
+                    msg_key = f"{chat_id}:{msg_id}"
+                    if msg_key in _processed_message_keys:
+                        continue
+                    _processed_message_keys.add(msg_key)
+                    if len(_processed_message_keys) > 500:
+                        _processed_message_keys = set(list(_processed_message_keys)[-200:])
                     
                     if chat_id != ADMIN_CHAT_ID:
                         log.warning("Unauthorized access from %s", chat_id)
                         continue
                     
                     if text.startswith("/"):
-                        await handle_telegram_command(chat_id, text, msg.get("message_id"))
+                        await handle_telegram_command(chat_id, text, msg_id)
                 
                 # Handle callback query
                 if "callback_query" in update:
                     cb = update["callback_query"]
+                    cb_id = cb.get("id", "")
                     cb_chat = cb.get("message", {}).get("chat", {}).get("id")
+                    
+                    # === منع تكرار معالجة نفس الـ callback ===
+                    cb_key = f"cb:{cb_id}"
+                    if cb_key in _processed_message_keys:
+                        continue
+                    _processed_message_keys.add(cb_key)
+                    
                     if cb_chat != ADMIN_CHAT_ID:
                         continue
                     await handle_callback_query(cb)
